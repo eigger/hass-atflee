@@ -1,0 +1,148 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "앳플리 체중계 설정",
+        "description": "검색된 장치를 선택하세요. 광고 수신 시 자동 접속하여 측정을 진행합니다.",
+        "data": {
+          "address": "블루투스 주소",
+          "height_cm": "사용자 키(cm)",
+          "birth_year": "출생 년도",
+          "sex": "성별 (male/female)",
+          "notify_timeout_seconds": "유휴 연결 해제 시간(초)",
+          "enable_body_composition": "체성분 측정 활성화"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "앳플리 장치 발견",
+        "description": "{name} 장치의 측정 세션 옵션을 설정하세요.",
+        "data": {
+          "height_cm": "사용자 키(cm)",
+          "birth_year": "출생 년도",
+          "sex": "성별 (male/female)",
+          "notify_timeout_seconds": "유휴 연결 해제 시간(초)",
+          "enable_body_composition": "체성분 측정 활성화"
+        }
+      }
+    },
+    "abort": {
+      "no_devices_found": "블루투스 장치를 찾지 못했습니다."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "앳플리 옵션",
+        "data": {
+          "height_cm": "사용자 키(cm)",
+          "birth_year": "출생 년도",
+          "sex": "성별 (male/female)",
+          "notify_timeout_seconds": "유휴 연결 해제 시간(초)",
+          "enable_body_composition": "체성분 측정 활성화"
+        }
+      }
+    }
+  },
+  "selector": {
+    "sex": {
+      "options": {
+        "male": "남성 (Male)",
+        "female": "여성 (Female)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "weight": {
+        "name": "체중"
+      },
+      "body_fat": {
+        "name": "체지방률"
+      },
+      "bmi": {
+        "name": "BMI"
+      },
+      "impedance": {
+        "name": "임피던스"
+      },
+      "subcutaneous_fat": {
+        "name": "피하지방률"
+      },
+      "visceral_fat": {
+        "name": "내장지방 레벨"
+      },
+      "muscle_pct": {
+        "name": "근육률"
+      },
+      "muscle_mass": {
+        "name": "근육량"
+      },
+      "bmr": {
+        "name": "기초대사량"
+      },
+      "bone_mass": {
+        "name": "골량"
+      },
+      "moisture_pct": {
+        "name": "체수분"
+      },
+      "protein_pct": {
+        "name": "단백질"
+      },
+      "skeletal_muscle_pct": {
+        "name": "골격근률"
+      },
+      "physical_age": {
+        "name": "신체 나이"
+      },
+      "body_score": {
+        "name": "신체 점수"
+      },
+      "battery": {
+        "name": "배터리"
+      },
+      "heart_rate": {
+        "name": "심박수"
+      },
+      "verify_status": {
+        "name": "인증 상태"
+      },
+      "measure_status": {
+        "name": "측정 상태"
+      },
+      "scale_status": {
+        "name": "기기 상태"
+      },
+      "connection_duration": {
+        "name": "연결 시간"
+      }
+    },
+    "binary_sensor": {
+      "ble_connection": {
+        "name": "연결 상태"
+      }
+    },
+    "number": {
+      "height_cm": {
+        "name": "사용자 키"
+      },
+      "birth_year": {
+        "name": "사용자 출생 연도"
+      }
+    },
+    "select": {
+      "sex": {
+        "name": "사용자 성별",
+        "state": {
+          "male": "남성",
+          "female": "여성"
+        }
+      }
+    },
+    "switch": {
+      "enable_body_comp": {
+        "name": "체성분 측정 활성화"
+      }
+    }
+  }
+}

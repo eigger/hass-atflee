@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Atflee scale setup",
+        "description": "Select a discovered scale. Connection starts when advertisement is received.",
+        "data": {
+          "address": "Bluetooth address",
+          "height_cm": "User height (cm)",
+          "notify_timeout_seconds": "Idle disconnect timeout (seconds)"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Atflee scale found",
+        "description": "Configure measurement session options for {name}.",
+        "data": {
+          "height_cm": "User height (cm)",
+          "notify_timeout_seconds": "Idle disconnect timeout (seconds)"
+        }
+      }
+    },
+    "abort": {
+      "no_devices_found": "No Bluetooth devices found."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Atflee options",
+        "data": {
+          "height_cm": "User height (cm)",
+          "notify_timeout_seconds": "Idle disconnect timeout (seconds)"
+        }
+      }
+    }
+  }
+}
