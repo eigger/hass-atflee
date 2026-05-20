@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from asyncio import Queue, TimeoutError, wait_for
 import logging
 
@@ -18,6 +19,12 @@ from .models import AtfleeMeasurement
 from .protocol import parse_measurement_packet
 
 _LOGGER = logging.getLogger(__name__)
+
+# Hard ceiling for stop_notify / disconnect. The scale often drops the link
+# without acking after a measurement, which can otherwise leave Bleak waiting
+# indefinitely and pin the session task in a non-done state — blocking every
+# future advertisement-driven reconnect attempt.
+DISCONNECT_TIMEOUT_SECONDS = 3.0
 
 
 def _is_notify_like(properties: list[str] | tuple[str, ...] | set[str]) -> bool:
@@ -285,35 +292,48 @@ class AtfleeBleClient:
                 return False
 
     async def disconnect(self) -> None:
-        """Stop notify and close current BLE session."""
+        """Stop notify and close current BLE session.
+
+        Every BLE call here is bounded by ``DISCONNECT_TIMEOUT_SECONDS``. The
+        scale can drop the link without acking and leave Bleak waiting on a
+        response that never arrives; without the timeout the session task
+        would stay non-done forever and block every future reconnect.
+        """
         if self._client is None:
             return
         try:
             if self._notify_char_uuid and self._client.is_connected:
-                try:
-                    await self._client.stop_notify(self._notify_char_uuid)
-                    _LOGGER.debug(
-                        "Atflee notify stopped: char=%s",
-                        self._notify_char_uuid,
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
+                await self._safe_call(
+                    self._client.stop_notify(self._notify_char_uuid),
+                    f"stop_notify({self._notify_char_uuid})",
+                )
             if self._client.is_connected and self._extra_notify_char_uuids:
                 for char_uuid in self._extra_notify_char_uuids:
-                    try:
-                        await self._client.stop_notify(char_uuid)
-                        _LOGGER.debug("Atflee extra notify stopped: char=%s", char_uuid)
-                    except Exception:  # noqa: BLE001
-                        pass
+                    await self._safe_call(
+                        self._client.stop_notify(char_uuid),
+                        f"stop_notify_extra({char_uuid})",
+                    )
             if self._client.is_connected:
-                await self._client.disconnect()
-                _LOGGER.debug("Atflee disconnected: address=%s", self._address)
+                await self._safe_call(
+                    self._client.disconnect(), f"disconnect({self._address})"
+                )
         finally:
             self._client = None
             self._notify_char_uuid = None
             self._write_char_uuid = None
             self._extra_notify_char_uuids = []
             self._last_notify_packet = None
+
+    @staticmethod
+    async def _safe_call(coro, label: str) -> None:
+        """Await a BLE cleanup coroutine, swallowing any timeout or error."""
+        try:
+            await asyncio.wait_for(coro, timeout=DISCONNECT_TIMEOUT_SECONDS)
+            _LOGGER.debug("Atflee cleanup ok: %s", label)
+        except asyncio.TimeoutError:
+            _LOGGER.debug("Atflee cleanup timed out: %s", label)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Atflee cleanup failed: %s err=%s", label, err)
 
     def last_service_info(self) -> BluetoothServiceInfoBleak | None:
         """Return latest discovery info for diagnostics."""
