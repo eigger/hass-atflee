@@ -83,7 +83,8 @@ ATFLEE_CANDIDATE_FAMILIES: tuple[ProtocolFamily, ...] = (
 )
 
 
-# Common keys exposed by native decode output maps.
+# Common JSON / key-value names that the scale firmware may use in its
+# notification payloads.
 NATIVE_MEASUREMENT_KEYS: tuple[str, ...] = (
     # 기본
     "battery",

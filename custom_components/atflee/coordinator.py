@@ -225,8 +225,16 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     idle_timeout,
                 )
                 
-                # Active Trigger: Send User Info Packet (B1) for Body Composition
-                from .atflee_ble.protocol import build_user_info_packet
+                # Active Trigger: arm body composition measurement on connect.
+                # Sequence:
+                #   1) FFA0 0x01 — start active measurement (wake body comp module)
+                #   2) B1       — push user info so the scale can pick algorithm
+                # The scale then sends A2/A3 weight notifies followed by A5/A7
+                # with body composition results.
+                from .atflee_ble.protocol import (
+                    build_start_measure_packet,
+                    build_user_info_packet,
+                )
                 from .const import (
                     CONF_BIRTH_YEAR,
                     CONF_SEX,
@@ -235,25 +243,46 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     DEFAULT_SEX,
                     DEFAULT_ENABLE_BODY_COMP,
                 )
-                
-                send_enabled = bool(self.entry.options.get(CONF_ENABLE_BODY_COMP, self.entry.data.get(CONF_ENABLE_BODY_COMP, DEFAULT_ENABLE_BODY_COMP)))
-                
+
+                send_enabled = bool(
+                    self.entry.options.get(
+                        CONF_ENABLE_BODY_COMP,
+                        self.entry.data.get(
+                            CONF_ENABLE_BODY_COMP, DEFAULT_ENABLE_BODY_COMP
+                        ),
+                    )
+                )
+
                 if send_enabled:
-                    birth_year = int(self.entry.options.get(CONF_BIRTH_YEAR, self.entry.data.get(CONF_BIRTH_YEAR, DEFAULT_BIRTH_YEAR)))
+                    birth_year = int(
+                        self.entry.options.get(
+                            CONF_BIRTH_YEAR,
+                            self.entry.data.get(CONF_BIRTH_YEAR, DEFAULT_BIRTH_YEAR),
+                        )
+                    )
                     current_year = datetime.now().year
                     age = max(1, current_year - birth_year)
-                    
-                    sex = str(self.entry.options.get(CONF_SEX, self.entry.data.get(CONF_SEX, DEFAULT_SEX)))
+                    sex = str(
+                        self.entry.options.get(
+                            CONF_SEX, self.entry.data.get(CONF_SEX, DEFAULT_SEX)
+                        )
+                    )
                     height_cm = self._current_height_cm()
-                    user_index = 1
-                    
-                    b1_packet = build_user_info_packet(
-                        user_index=user_index,
+
+                    start_packet = build_start_measure_packet(seq=1)
+                    if not await self.client.send_user_info(start_packet):
+                        _LOGGER.debug(
+                            "Atflee FFA0 start command failed; continuing with B1"
+                        )
+
+                    user_info_packet = build_user_info_packet(
+                        user_index=1,
                         sex=sex,
                         age=age,
-                        height_cm=height_cm
+                        height_cm=height_cm,
+                        seq=2,
                     )
-                    await self.client.send_user_info(b1_packet)
+                    await self.client.send_user_info(user_info_packet)
                 else:
                     _LOGGER.debug("Atflee body composition measurement skipped (disabled)")
 
