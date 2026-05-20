@@ -21,6 +21,7 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -30,20 +31,22 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_BIRTH_YEAR,
+    CONF_ENABLE_BODY_COMP,
     CONF_HEIGHT_CM,
     CONF_NOTIFY_TIMEOUT_SECONDS,
-    CONF_BIRTH_YEAR,
     CONF_SEX,
+    DEFAULT_BIRTH_YEAR,
+    DEFAULT_ENABLE_BODY_COMP,
     DEFAULT_HEIGHT_CM,
     DEFAULT_NOTIFY_TIMEOUT_SECONDS,
-    DEFAULT_BIRTH_YEAR,
     DEFAULT_SEX,
     DOMAIN,
     GATT_PROFILES,
-    MAX_HEIGHT_CM,
-    MIN_HEIGHT_CM,
-    MIN_BIRTH_YEAR,
     MAX_BIRTH_YEAR,
+    MAX_HEIGHT_CM,
+    MIN_BIRTH_YEAR,
+    MIN_HEIGHT_CM,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,6 +97,9 @@ BASE_SCHEMA = {
             unit_of_measurement="seconds",
         )
     ),
+    vol.Required(
+        CONF_ENABLE_BODY_COMP, default=DEFAULT_ENABLE_BODY_COMP
+    ): BooleanSelector(),
 }
 
 

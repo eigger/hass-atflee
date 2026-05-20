@@ -7,7 +7,16 @@ import logging
 from typing import Any
 
 from .models import AtfleeMeasurement
-from .packet import parse_frame
+from .packet import (
+    CMD_START_MEASURE,
+    CMD_USER_INFO,
+    CMD_UPLOAD_RESULT,
+    CMD_UPLOAD_RESULT_EX,
+    CMD_WEIGHT_STABLE,
+    CMD_WEIGHT_UNSTABLE,
+    build_packet,
+    parse_frame,
+)
 from .protocol_spec import NATIVE_MEASUREMENT_KEYS
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,7 +83,13 @@ def parse_measurement_packet(payload: bytes) -> AtfleeMeasurement:
     #   0x011774 -> 71540 -> 71.54 kg (divide by 1000).
     if len(framed_payload) >= 9:
         cmd = framed_payload[3]
-        if cmd in (0xA2, 0xA3):
+        # A5/A7: body composition / impedance result. Firmware variants may
+        # shift offsets; we record the raw extended bytes regardless so an
+        # unparsable layout still surfaces in diagnostics.
+        if cmd in (CMD_UPLOAD_RESULT, CMD_UPLOAD_RESULT_EX):
+            _decode_body_composition_result(framed_payload, parsed)
+            return parsed
+        if cmd in (CMD_WEIGHT_UNSTABLE, CMD_WEIGHT_STABLE):
             # Device firmware variants use different 3-byte BE offsets for weight.
             # Known candidates:
             # - [6:9] (legacy captures: 0x011774 -> 71.54kg)
@@ -129,12 +144,18 @@ def parse_measurement_packet(payload: bytes) -> AtfleeMeasurement:
             if 10.0 <= weight_kg_3b <= 300.0:
                 parsed.weight_kg = round(weight_kg_3b, 2)
                 parsed.measure_state = "weight"
-                parsed.is_stable = cmd == 0xA3
+                parsed.is_stable = cmd == CMD_WEIGHT_STABLE
                 parsed.is_body_composition_complete = False
                 parsed.packet_command = cmd
                 parsed.packet_sequence = packet_seq
                 parsed.packet_tail = packet_tail
                 parsed.extended_payload_hex = extended_slice.hex() if extended_slice else None
+
+                # Some firmware variants ship impedance bytes inside the A3
+                # (stable weight) tail. Surface them so the body composition
+                # algorithm path can pick them up if present.
+                if cmd == CMD_WEIGHT_STABLE and extended_non_zero:
+                    _extract_inline_impedance(framed_payload, parsed)
                 return parsed
 
     # Pattern 3: fallback heuristic for binary payload where first 2 bytes
@@ -299,33 +320,159 @@ def _to_int(value: Any) -> int | None:
         return None
 
 
-def build_user_info_packet(user_index: int, sex: str, age: int, height_cm: int) -> bytes:
-    """Builds a B1 user info packet for active body composition measurement.
-    
-    Byte 0: 0xB1 (Command)
-    Byte 1: 0x01 (Package index or user index)
-    Byte 2: user_index
-    Byte 3: sex (1=Male, 0=Female)
-    Byte 4: age
-    Byte 5: height (cm)
-    ...
-    Byte 13: XOR Checksum
+def build_user_info_packet(
+    user_index: int,
+    sex: str,
+    age: int,
+    height_cm: int,
+    *,
+    seq: int = 1,
+    target_weight_kg: float = 0.0,
+    body_type: int = 0,
+    unit: int = 0,
+) -> bytes:
+    """Build a 20-byte 0xB1 user info packet.
+
+    Layout matches the [seq, 0x07, 0x00, cmd] header observed on the A2/A3
+    notify side, followed by a 15-byte payload and XOR checksum.
+
+    Payload layout (offsets from packet[4]):
+        +0..+1: user_id big-endian
+        +2:    sex (1 = male, 0 = female)
+        +3:    age (years)
+        +4:    height cm
+        +5:    body_type (0 = ordinary, 1 = athlete)
+        +6..+7: target weight in 0.01 kg, big-endian
+        +8:    unit (0 = kg, 1 = lb, 2 = st)
     """
-    packet = bytearray(14)
-    packet[0] = 0xB1
-    packet[1] = 0x01
-    packet[2] = max(1, user_index & 0xFF)
-    packet[3] = 1 if str(sex).lower() in ("male", "m", "1") else 0
-    packet[4] = age & 0xFF
-    packet[5] = height_cm & 0xFF
-    
-    # Calculate checksum (Simple XOR)
-    checksum = 0
-    for i in range(1, 13):
-        checksum ^= packet[i]
-    packet[13] = checksum
-    
-    return bytes(packet)
+
+    payload = bytearray(15)
+    user_id = max(1, user_index) & 0xFFFF
+    payload[0] = (user_id >> 8) & 0xFF
+    payload[1] = user_id & 0xFF
+    payload[2] = 1 if str(sex).lower() in ("male", "m", "1") else 0
+    payload[3] = max(0, min(120, int(age))) & 0xFF
+    payload[4] = max(0, min(250, int(height_cm))) & 0xFF
+    payload[5] = body_type & 0xFF
+    target_units = max(0, int(round(target_weight_kg * 100)))
+    payload[6] = (target_units >> 8) & 0xFF
+    payload[7] = target_units & 0xFF
+    payload[8] = unit & 0xFF
+    return build_packet(seq=seq, command=CMD_USER_INFO, payload=bytes(payload))
+
+
+def build_start_measure_packet(*, seq: int = 1) -> bytes:
+    """Build the FFA0 control packet that arms the active measurement.
+
+    The scale needs an explicit FFA0 0x01 control to begin an active body
+    composition measurement after the user info exchange. FFA0 0x00 is the
+    matching stop command.
+    """
+    payload = bytes([0x01])
+    return build_packet(seq=seq, command=CMD_START_MEASURE & 0xFF, payload=payload)
+
+
+def build_stop_measure_packet(*, seq: int = 1) -> bytes:
+    """Build the FFA0 0x00 control packet that ends the active measurement."""
+    return build_packet(
+        seq=seq, command=CMD_START_MEASURE & 0xFF, payload=bytes([0x00])
+    )
+
+
+def _decode_body_composition_result(framed_payload: bytes, parsed: AtfleeMeasurement) -> None:
+    """Decode an A5 / A7 body composition result packet.
+
+    Unknown bytes are kept as None so the parser does not fabricate values
+    when firmware diverges from the expected layout below.
+
+    Offsets (relative to framed_payload):
+        [3]   command (0xA5 / 0xA7)
+        [4]   sequence sub-index
+        [5..7]  weight in grams (3-byte big-endian, /1000 = kg)
+        [8..9]  impedance ohm (big-endian)
+        [10]  body fat (% * 10)
+        [11]  body water (% * 10)
+        [12]  muscle (% * 10)
+        [13]  visceral fat (level * 10)
+        [14]  bone mass (kg * 10)
+        [15..16] BMR (kcal, big-endian)
+        [17]  protein (% * 10)
+        [18]  physical age (years)
+    """
+    cmd = framed_payload[3]
+    parsed.packet_command = cmd
+    parsed.packet_sequence = framed_payload[0] if len(framed_payload) > 0 else None
+    parsed.packet_tail = framed_payload[19] if len(framed_payload) > 19 else None
+    parsed.extended_payload_hex = (
+        framed_payload[4:19].hex() if len(framed_payload) >= 19 else framed_payload[4:].hex()
+    )
+
+    if len(framed_payload) >= 8:
+        weight_raw = int.from_bytes(framed_payload[5:8], byteorder="big", signed=False)
+        weight_kg = weight_raw / 1000.0
+        if 10.0 <= weight_kg <= 300.0:
+            parsed.weight_kg = round(weight_kg, 2)
+
+    if len(framed_payload) >= 10:
+        impedance = int.from_bytes(framed_payload[8:10], byteorder="big", signed=False)
+        if 100 <= impedance <= 1500:
+            parsed.impedance_ohm = impedance
+
+    parsed.body_fat_pct = _scaled_byte(framed_payload, 10, scale=10.0, lo=2.0, hi=80.0)
+    parsed.moisture_pct = _scaled_byte(framed_payload, 11, scale=10.0, lo=10.0, hi=90.0)
+    parsed.muscle_pct = _scaled_byte(framed_payload, 12, scale=10.0, lo=10.0, hi=80.0)
+    parsed.visceral_fat = _scaled_byte(framed_payload, 13, scale=10.0, lo=1.0, hi=30.0)
+    parsed.bone_mass = _scaled_byte(framed_payload, 14, scale=10.0, lo=0.5, hi=8.0)
+
+    if len(framed_payload) >= 17:
+        bmr_raw = int.from_bytes(framed_payload[15:17], byteorder="big", signed=False)
+        if 500 <= bmr_raw <= 4000:
+            parsed.bmr = bmr_raw
+
+    parsed.protein_pct = _scaled_byte(framed_payload, 17, scale=10.0, lo=5.0, hi=40.0)
+
+    if len(framed_payload) >= 19:
+        age_raw = framed_payload[18]
+        if 5 <= age_raw <= 120:
+            parsed.physical_age = age_raw
+
+    parsed.measure_state = "body_composition"
+    parsed.is_stable = True
+    # The A7 variant carries the closing "EX" upload — treat both as complete.
+    parsed.is_body_composition_complete = True
+
+
+def _extract_inline_impedance(framed_payload: bytes, parsed: AtfleeMeasurement) -> None:
+    """Read impedance bytes that some firmwares append to the A3 tail.
+
+    Heuristic: scan two-byte windows in [9..18] for a value in 100..1500.
+    Only sets the field if a single plausible window is found.
+    """
+    if parsed.impedance_ohm is not None:
+        return
+    candidates: list[int] = []
+    end = min(len(framed_payload) - 1, 18)
+    for idx in range(9, end):
+        value = int.from_bytes(framed_payload[idx : idx + 2], byteorder="big", signed=False)
+        if 100 <= value <= 1500:
+            candidates.append(value)
+    if len(candidates) == 1:
+        parsed.impedance_ohm = candidates[0]
+
+
+def _scaled_byte(
+    data: bytes, index: int, *, scale: float, lo: float, hi: float
+) -> float | None:
+    """Read one byte, divide by scale, return only if within [lo, hi]."""
+    if len(data) <= index:
+        return None
+    raw = data[index]
+    if raw == 0:
+        return None
+    value = raw / scale
+    if lo <= value <= hi:
+        return round(value, 2)
+    return None
 
 
 def _to_bool(value: Any) -> bool | None:
