@@ -44,6 +44,7 @@ class AtfleeMeasurement:
     # --- 패킷 진단 ---
     packet_command: int | None = None
     packet_sequence: int | None = None
+    packet_sub_index: int | None = None
     packet_tail: int | None = None
     extended_payload_hex: str | None = None
     measure_state: str | None = None

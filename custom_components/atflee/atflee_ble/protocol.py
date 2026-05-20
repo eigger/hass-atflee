@@ -8,6 +8,8 @@ from typing import Any
 
 from .models import AtfleeMeasurement
 from .packet import (
+    CMD_REPLY_ACK,
+    CMD_REPLY_PACKAGE,
     CMD_START_MEASURE,
     CMD_USER_INFO,
     CMD_UPLOAD_RESULT,
@@ -83,6 +85,24 @@ def parse_measurement_packet(payload: bytes) -> AtfleeMeasurement:
     #   0x011774 -> 71540 -> 71.54 kg (divide by 1000).
     if len(framed_payload) >= 9:
         cmd = framed_payload[3]
+        # A0: scale-initiated reply_package request. The scale waits for a
+        # matching B0 ack before progressing past the weight stage, so we
+        # surface it as a control packet (no measurement fields) and let the
+        # coordinator send the ack.
+        if cmd == CMD_REPLY_PACKAGE:
+            parsed.packet_command = cmd
+            parsed.packet_sequence = framed_payload[0]
+            parsed.packet_sub_index = framed_payload[4] if len(framed_payload) > 4 else None
+            parsed.packet_tail = (
+                framed_payload[19] if len(framed_payload) > 19 else None
+            )
+            parsed.extended_payload_hex = (
+                framed_payload[4:19].hex()
+                if len(framed_payload) >= 19
+                else framed_payload[4:].hex()
+            )
+            parsed.measure_state = "handshake"
+            return parsed
         # A5/A7: body composition / impedance result. Firmware variants may
         # shift offsets; we record the raw extended bytes regardless so an
         # unparsable layout still surfaces in diagnostics.
@@ -377,6 +397,24 @@ def build_stop_measure_packet(*, seq: int = 1) -> bytes:
     return build_packet(
         seq=seq, command=CMD_START_MEASURE & 0xFF, payload=bytes([0x00])
     )
+
+
+def build_reply_ack_packet(
+    *, seq: int, echo_index: int = 0, payload_bytes: bytes = b""
+) -> bytes:
+    """Build a 0xB0 reply that acknowledges a scale-initiated A0 packet.
+
+    The scale's A0 carries a sub-index in payload[0]; the B0 reply echoes that
+    sub-index so the firmware knows which request we are answering. Optional
+    payload_bytes are placed right after the echoed index for cases where the
+    firmware also wants a small response body (e.g. setting confirmation).
+    """
+    payload = bytearray(15)
+    payload[0] = echo_index & 0xFF
+    if payload_bytes:
+        room = len(payload) - 1
+        payload[1 : 1 + min(room, len(payload_bytes))] = payload_bytes[:room]
+    return build_packet(seq=seq, command=CMD_REPLY_ACK, payload=bytes(payload))
 
 
 def _decode_body_composition_result(framed_payload: bytes, parsed: AtfleeMeasurement) -> None:
