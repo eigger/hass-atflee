@@ -357,7 +357,21 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug("Atflee session failed for %s: %s", self.address, err)
             finally:
-                await self.client.disconnect()
+                # Bounded so a stuck BLE peer never pins this task in the
+                # "running" state and blocks future advertisement triggers.
+                try:
+                    await asyncio.wait_for(self.client.disconnect(), timeout=8.0)
+                except asyncio.TimeoutError:
+                    _LOGGER.debug(
+                        "Atflee disconnect exceeded outer budget for %s; forcing teardown",
+                        self.address,
+                    )
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug(
+                        "Atflee disconnect raised for %s: %s",
+                        self.address,
+                        err,
+                    )
                 self._last_session_end_monotonic = monotonic()
                 _LOGGER.debug("Atflee session end: address=%s", self.address)
                 self.async_set_updated_data(self._build_state(connected=False, measuring=False))
