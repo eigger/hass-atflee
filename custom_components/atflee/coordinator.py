@@ -46,6 +46,13 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         self._connected_started_monotonic: float | None = None
         self._last_session_end_monotonic: float = 0.0
         self._reconnect_cooldown_seconds: float = 5.0
+        # Diagnostics: count every advertisement callback fire and accepted
+        # session trigger so it is unambiguous from the logs whether the BLE
+        # stack stopped delivering advertisements or whether we are receiving
+        # them but skipping the trigger.
+        self._adv_callback_count: int = 0
+        self._session_trigger_count: int = 0
+        self._last_adv_monotonic: float | None = None
 
         super().__init__(
             hass,
@@ -57,6 +64,10 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
     async def async_start(self) -> None:
         """Start advertisement-driven update flow."""
         if self._adv_unsub is not None:
+            _LOGGER.debug(
+                "Atflee adv callback already registered for %s; skip re-register",
+                self.address,
+            )
             return
         self._adv_unsub = bluetooth.async_register_callback(
             self.hass,
@@ -64,13 +75,16 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             {"address": self.address},
             bluetooth.BluetoothScanningMode.ACTIVE,
         )
-        _LOGGER.debug("Atflee adv callback registered for %s", self.address)
+        _LOGGER.debug(
+            "Atflee adv callback registered: address=%s mode=ACTIVE", self.address
+        )
 
     async def async_stop(self) -> None:
         """Stop callbacks and running session."""
         if self._adv_unsub is not None:
             self._adv_unsub()
             self._adv_unsub = None
+            _LOGGER.debug("Atflee adv callback unregistered: address=%s", self.address)
         if self._session_task is not None and not self._session_task.done():
             self._session_task.cancel()
             try:
@@ -80,23 +94,76 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         await self.client.disconnect()
 
     @callback
-    def _async_on_advertisement(self, _service_info, _change) -> None:
+    def _async_on_advertisement(self, service_info, change) -> None:
         """Start one session when advertisement is received."""
-        _LOGGER.debug("Atflee advertisement received for %s", self.address)
+        self._adv_callback_count += 1
         now = monotonic()
+        gap = (
+            f"{now - self._last_adv_monotonic:.2f}s"
+            if self._last_adv_monotonic is not None
+            else "first"
+        )
+        self._last_adv_monotonic = now
+
+        # Surface every adv fire with enough context to tell apart "BLE stack
+        # stopped delivering ads" from "ad delivered but trigger skipped".
+        rssi = getattr(service_info, "rssi", None)
+        name = getattr(service_info, "name", None) or getattr(
+            getattr(service_info, "advertisement", None), "local_name", None
+        )
+        connectable = getattr(service_info, "connectable", None)
+        service_uuids = list(getattr(service_info, "service_uuids", []) or [])
+        _LOGGER.debug(
+            "Atflee adv callback fired: address=%s count=%d gap=%s "
+            "change=%s rssi=%s name=%s connectable=%s services=%s",
+            self.address,
+            self._adv_callback_count,
+            gap,
+            change,
+            rssi,
+            name,
+            connectable,
+            service_uuids,
+        )
+
+        # Skip reason 1: still within the post-session cooldown window.
         remaining_cooldown = self._reconnect_cooldown_seconds - (
             now - self._last_session_end_monotonic
         )
         if remaining_cooldown > 0:
             _LOGGER.debug(
-                "Atflee reconnect cooldown active for %s: %.2fs remaining",
+                "Atflee adv trigger skipped (cooldown): address=%s "
+                "remaining=%.2fs count=%d",
                 self.address,
                 remaining_cooldown,
+                self._adv_callback_count,
             )
             return
+
+        # Skip reason 2: a previous session task has not finished yet.
         if self._session_task is not None and not self._session_task.done():
-            _LOGGER.debug("Atflee session already running; skipping new trigger")
+            task_age = (
+                f"{now - self._last_session_end_monotonic:.1f}s since last end"
+                if self._last_session_end_monotonic
+                else "no prior session"
+            )
+            _LOGGER.debug(
+                "Atflee adv trigger skipped (session_task busy): address=%s "
+                "task_done=%s age=%s count=%d",
+                self.address,
+                self._session_task.done(),
+                task_age,
+                self._adv_callback_count,
+            )
             return
+
+        self._session_trigger_count += 1
+        _LOGGER.debug(
+            "Atflee adv trigger accepted: address=%s session=#%d adv_count=%d",
+            self.address,
+            self._session_trigger_count,
+            self._adv_callback_count,
+        )
         self._session_task = self.hass.async_create_task(self._run_measurement_session())
 
     def _current_height_cm(self) -> int:
@@ -231,7 +298,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                 #   2) B1       — push user info so the scale can pick algorithm
                 # The scale then sends A2/A3 weight notifies followed by A5/A7
                 # with body composition results.
+                from .atflee_ble.packet import CMD_REPLY_PACKAGE
                 from .atflee_ble.protocol import (
+                    build_reply_ack_packet,
                     build_start_measure_packet,
                     build_user_info_packet,
                 )
@@ -253,6 +322,16 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     )
                 )
 
+                # Outbound sequence counter shared across all writes in this
+                # session. Wraps 1..255 (the firmware treats 0 as invalid).
+                out_seq = 1
+
+                def next_seq() -> int:
+                    nonlocal out_seq
+                    value = out_seq
+                    out_seq = (out_seq % 255) + 1
+                    return value
+
                 if send_enabled:
                     birth_year = int(
                         self.entry.options.get(
@@ -269,7 +348,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     )
                     height_cm = self._current_height_cm()
 
-                    start_packet = build_start_measure_packet(seq=1)
+                    start_packet = build_start_measure_packet(seq=next_seq())
                     if not await self.client.send_user_info(start_packet):
                         _LOGGER.debug(
                             "Atflee FFA0 start command failed; continuing with B1"
@@ -280,7 +359,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         sex=sex,
                         age=age,
                         height_cm=height_cm,
-                        seq=2,
+                        seq=next_seq(),
                     )
                     await self.client.send_user_info(user_info_packet)
                 else:
@@ -306,6 +385,21 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         measurement.is_body_composition_complete,
                         measurement.raw_hex,
                     )
+
+                    # A0 reply_package: the scale is asking us to confirm
+                    # before it advances to the body composition stage. Echo
+                    # the sub-index in a B0 ack and continue listening.
+                    if measurement.packet_command == CMD_REPLY_PACKAGE:
+                        ack_packet = build_reply_ack_packet(
+                            seq=next_seq(),
+                            echo_index=measurement.packet_sub_index or 0,
+                        )
+                        await self.client.send_user_info(ack_packet)
+                        _LOGGER.debug(
+                            "Atflee A0 ack sent: sub_index=%s",
+                            measurement.packet_sub_index,
+                        )
+                        continue
 
                     # Ignore control/heartbeat packets that do not carry any mapped value.
                     # Example: 001a010000... (frequently interleaved with stable A3).
@@ -373,7 +467,14 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         err,
                     )
                 self._last_session_end_monotonic = monotonic()
-                _LOGGER.debug("Atflee session end: address=%s", self.address)
+                _LOGGER.debug(
+                    "Atflee session end: address=%s session=#%d adv_count=%d "
+                    "cooldown_starts=%.1fs",
+                    self.address,
+                    self._session_trigger_count,
+                    self._adv_callback_count,
+                    self._reconnect_cooldown_seconds,
+                )
                 self.async_set_updated_data(self._build_state(connected=False, measuring=False))
 
     async def _async_update_data(self) -> AtfleeState:

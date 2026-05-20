@@ -20,6 +20,7 @@ PACKET_LEN = 20
 CHECKSUM_INDEX = 19
 
 # Encode (app -> scale) commands.
+CMD_REPLY_ACK = 0xB0  # app ack to a scale-initiated A0 reply_package request
 CMD_USER_INFO = 0xB1
 CMD_SETTINGS = 0xB2
 CMD_START_MEASURE = 0xFFA0  # broadcast control: 0x01 = start, 0x00 = stop
