@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from time import monotonic
 
@@ -11,6 +11,7 @@ from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .atflee_ble.connection import AtfleeBleClient
@@ -24,6 +25,14 @@ from .const import (
 from .atflee_ble.models import AtfleeMeasurement, AtfleeState
 
 _LOGGER = logging.getLogger(__name__)
+
+# Reliable fallback poll. HA's bluetooth manager de-duplicates advertisements
+# whose payload is unchanged, and this scale advertises a *static* payload
+# (fixed local name, no changing manufacturer/service data). So after the first
+# sighting is cached, _async_on_advertisement stops firing and a session can
+# never be started again from adverts alone. The watchdog polls device presence
+# instead, which is unaffected by de-duplication.
+WATCHDOG_INTERVAL = timedelta(seconds=5)
 
 
 class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
@@ -41,6 +50,13 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         self.address: str = entry.data[CONF_ADDRESS]
         self.client = AtfleeBleClient(hass, self.address)
         self._adv_unsub = None
+        self._watchdog_unsub = None
+        # True once a session has been started for the current awake period.
+        # Reset when the device goes absent (scale slept / out of range) so the
+        # next reappearance is treated as a fresh wake and gets exactly one
+        # session -- instead of reconnecting in a loop while it keeps
+        # advertising. See _async_watchdog / _maybe_start_session.
+        self._handled_current_presence: bool = False
         self._session_task: asyncio.Task | None = None
         self._session_lock = asyncio.Lock()
         self._connected_started_monotonic: float | None = None
@@ -78,9 +94,17 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         _LOGGER.debug(
             "Atflee adv callback registered: address=%s mode=ACTIVE", self.address
         )
+        # Fallback trigger that does not depend on advertisement callbacks (see
+        # WATCHDOG_INTERVAL): polls presence and starts one session per wake.
+        self._watchdog_unsub = async_track_time_interval(
+            self.hass, self._async_watchdog, WATCHDOG_INTERVAL
+        )
 
     async def async_stop(self) -> None:
         """Stop callbacks and running session."""
+        if self._watchdog_unsub is not None:
+            self._watchdog_unsub()
+            self._watchdog_unsub = None
         if self._adv_unsub is not None:
             self._adv_unsub()
             self._adv_unsub = None
@@ -126,41 +150,79 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             service_uuids,
         )
 
-        # Skip reason 1: still within the post-session cooldown window.
+        # An advertisement is a strong wake signal; try to start a session.
+        self._maybe_start_session("advertisement")
+
+    @callback
+    def _async_watchdog(self, _now=None) -> None:
+        """Poll presence and start a session when adverts are de-duplicated.
+
+        The advertisement callback is only a fast path. Because HA de-duplicates
+        this scale's static advertisement, it stops firing after the first
+        sighting -- so reconnection cannot rely on it. Here we poll device
+        presence: when the scale is absent (asleep / out of range) we re-arm,
+        and when it is present and not yet handled for this wake we start one
+        session.
+        """
+        if self._adv_unsub is None:
+            return
+        present = (
+            bluetooth.async_ble_device_from_address(
+                self.hass, self.address, connectable=True
+            )
+            is not None
+        )
+        if not present:
+            # Scale slept / out of range: arm so its next appearance is a fresh
+            # wake that gets its own session.
+            if self._handled_current_presence:
+                _LOGGER.debug(
+                    "Atflee watchdog: %s now absent; re-arming for next wake",
+                    self.address,
+                )
+            self._handled_current_presence = False
+            return
+        if self._handled_current_presence:
+            return
+        self._maybe_start_session("watchdog")
+
+    def _maybe_start_session(self, reason: str) -> None:
+        """Start one measurement session if not in cooldown / already running.
+
+        Marks the current presence handled so we run exactly one session per
+        wake rather than looping while the scale keeps advertising.
+        """
+        now = monotonic()
+
+        # Skip: still within the post-session cooldown window.
         remaining_cooldown = self._reconnect_cooldown_seconds - (
             now - self._last_session_end_monotonic
         )
         if remaining_cooldown > 0:
             _LOGGER.debug(
-                "Atflee adv trigger skipped (cooldown): address=%s "
-                "remaining=%.2fs count=%d",
+                "Atflee session trigger skipped (cooldown): address=%s reason=%s "
+                "remaining=%.2fs",
                 self.address,
+                reason,
                 remaining_cooldown,
-                self._adv_callback_count,
             )
             return
 
-        # Skip reason 2: a previous session task has not finished yet.
+        # Skip: a previous session task has not finished yet.
         if self._session_task is not None and not self._session_task.done():
-            task_age = (
-                f"{now - self._last_session_end_monotonic:.1f}s since last end"
-                if self._last_session_end_monotonic
-                else "no prior session"
-            )
             _LOGGER.debug(
-                "Atflee adv trigger skipped (session_task busy): address=%s "
-                "task_done=%s age=%s count=%d",
+                "Atflee session trigger skipped (session busy): address=%s reason=%s",
                 self.address,
-                self._session_task.done(),
-                task_age,
-                self._adv_callback_count,
+                reason,
             )
             return
 
         self._session_trigger_count += 1
+        self._handled_current_presence = True
         _LOGGER.debug(
-            "Atflee adv trigger accepted: address=%s session=#%d adv_count=%d",
+            "Atflee session trigger accepted: address=%s reason=%s session=#%d adv_count=%d",
             self.address,
+            reason,
             self._session_trigger_count,
             self._adv_callback_count,
         )
@@ -272,6 +334,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             ble_device = bluetooth.async_ble_device_from_address(self.hass, self.address)
             if ble_device is None:
                 _LOGGER.debug("Adv trigger but BLE device unavailable: %s", self.address)
+                # Never actually connected; let the watchdog retry this wake.
+                self._handled_current_presence = False
                 return
             _LOGGER.debug(
                 "Atflee session start: address=%s name=%s rssi=%s",
@@ -447,8 +511,13 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         )
                     )
             except TimeoutError:
+                # Normal end: measured then went idle. Keep this wake "handled"
+                # so we don't immediately re-measure while still advertising.
                 _LOGGER.debug("Atflee session idle timeout for %s", self.address)
             except Exception as err:  # noqa: BLE001
+                # Abnormal end (connect/notify failure): allow a retry on the
+                # next watchdog tick once the cooldown elapses.
+                self._handled_current_presence = False
                 _LOGGER.debug("Atflee session failed for %s: %s", self.address, err)
             finally:
                 # Bounded so a stuck BLE peer never pins this task in the
