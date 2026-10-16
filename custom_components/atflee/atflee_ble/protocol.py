@@ -109,21 +109,20 @@ def parse_measurement_packet(payload: bytes) -> AtfleeMeasurement:
         # shift offsets; we record the raw extended bytes regardless so an
         # unparsable layout still surfaces in diagnostics.
         if cmd in (CMD_UPLOAD_RESULT, CMD_UPLOAD_RESULT_EX):
-            if _decode_upload_packet(framed_payload, parsed):
-                return parsed
             if framed_payload[1] == PROTOCOL_VER:
-                _mark_control_packet(framed_payload, parsed)
+                if not _decode_upload_packet(framed_payload, parsed):
+                    _mark_control_packet(framed_payload, parsed)
                 return parsed
             _decode_body_composition_result(framed_payload, parsed)
             return parsed
         if cmd in (CMD_WEIGHT_UNSTABLE, CMD_WEIGHT_STABLE):
-            if _decode_weight_packet(framed_payload, cmd, parsed):
-                return parsed
             if framed_payload[1] == PROTOCOL_VER:
-                # Known layout but no plausible weight: never guess one from
-                # bytes that belong to other fields.
-                _mark_control_packet(framed_payload, parsed)
+                # Known layout: never guess a weight from bytes that belong to
+                # other fields when the decoded one is implausible.
+                if not _decode_weight_packet(framed_payload, cmd, parsed):
+                    _mark_control_packet(framed_payload, parsed)
                 return parsed
+            # Other firmware variants (byte 1 != 0x07) keep the legacy probing.
             # Device firmware variants use different 3-byte BE offsets for weight.
             # Known candidates:
             # - [6:9] (legacy captures: 0x011774 -> 71.54kg)
