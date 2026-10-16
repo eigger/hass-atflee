@@ -107,9 +107,12 @@ def parse_measurement_packet(payload: bytes) -> AtfleeMeasurement:
         # shift offsets; we record the raw extended bytes regardless so an
         # unparsable layout still surfaces in diagnostics.
         if cmd in (CMD_UPLOAD_RESULT, CMD_UPLOAD_RESULT_EX):
-            _decode_body_composition_result(framed_payload, parsed)
+            if not _decode_upload_packet(framed_payload, parsed):
+                _decode_body_composition_result(framed_payload, parsed)
             return parsed
         if cmd in (CMD_WEIGHT_UNSTABLE, CMD_WEIGHT_STABLE):
+            if _decode_weight_packet(framed_payload, cmd, parsed):
+                return parsed
             # Device firmware variants use different 3-byte BE offsets for weight.
             # Known candidates:
             # - [6:9] (legacy captures: 0x011774 -> 71.54kg)
@@ -415,6 +418,127 @@ def build_reply_ack_packet(
         room = len(payload) - 1
         payload[1 : 1 + min(room, len(payload_bytes))] = payload_bytes[:room]
     return build_packet(seq=seq, command=CMD_REPLY_ACK, payload=bytes(payload))
+
+
+# Weight word shared by A2/A3/A5/A7 packets (big-endian 32-bit):
+#   bits 0..17   weight in grams
+#   bits 18..20  kg rounding code (0 = round to 10 g)
+#   bits 24..31  body-fat algorithm type
+_WEIGHT_MASK = 0x3FFFF
+
+
+def _word_to_kg(word: int) -> float:
+    """Convert a packed weight word to kg using the scale's rounding rules."""
+    grams = float(word & _WEIGHT_MASK)
+    code = (word >> 18) & 0x7
+    kg = grams / 1000.0
+    scaled = kg * 1000.0 if code < 3 else kg * 100.0
+    # The firmware nudges values whose next decimal digit is 9 upwards.
+    if int(scaled * 10.0) % 10 >= 9:
+        scaled += 1.0
+    value = int(scaled)
+    if code == 0:
+        return int((value + 5) / 10.0) / 100.0
+    if code in (1, 4):
+        if value % 10 == 9:
+            value += 10
+        half = int(value / 10.0)
+        half += half & 1
+        return half / 100.0 if code == 1 else half / 10.0
+    if code == 2:
+        tens = int((value + 20) / 10.0)
+        base = (tens // 10) * 10
+        return (base + 5 if tens % 10 >= 5 else base) / 100.0
+    return int((value + 5) / 10.0) / 10.0
+
+
+def _plausible_impedance(raw: int) -> int | None:
+    """Return ohms for a raw impedance short (some scales report ohm * 10)."""
+    if 100 <= raw <= 1500:
+        return raw
+    if 1000 < raw <= 15000:
+        return int(round(raw / 10.0))
+    return None
+
+
+def _decode_weight_packet(
+    framed_payload: bytes, cmd: int, parsed: AtfleeMeasurement
+) -> bool:
+    """Decode A2 (unstable) / A3 (stable) weight packets.
+
+    Payload layout (offsets in the 20-byte notification):
+        A2: [4] state, [5..8] weight word, [9] heart rate
+        A3: [4..7] weight word, [8] heart rate, [9..] impedance shorts
+    Returns False when the layout does not yield a plausible weight so the
+    caller can fall back to the legacy heuristics.
+    """
+    word_at = 5 if cmd == CMD_WEIGHT_UNSTABLE else 4
+    if len(framed_payload) < word_at + 4:
+        return False
+    word = int.from_bytes(framed_payload[word_at : word_at + 4], "big")
+    weight_kg = _word_to_kg(word)
+    if not 10.0 <= weight_kg <= 300.0:
+        return False
+
+    parsed.weight_kg = round(weight_kg, 2)
+    parsed.packet_command = cmd
+    parsed.packet_sequence = framed_payload[0]
+    parsed.packet_tail = framed_payload[19] if len(framed_payload) > 19 else None
+    parsed.extended_payload_hex = framed_payload[4:19].hex()
+    parsed.measure_state = "weight"
+    parsed.is_stable = cmd == CMD_WEIGHT_STABLE
+    parsed.is_body_composition_complete = False
+
+    hr_at = word_at + 4
+    if len(framed_payload) > hr_at and framed_payload[hr_at]:
+        parsed.heart_rate = framed_payload[hr_at]
+    if cmd == CMD_WEIGHT_UNSTABLE and len(framed_payload) > 4:
+        parsed.measure_status = framed_payload[4]
+    if cmd == CMD_WEIGHT_STABLE:
+        for idx in range(hr_at + 1, min(len(framed_payload) - 1, 19) - 1, 2):
+            ohm = _plausible_impedance(
+                int.from_bytes(framed_payload[idx : idx + 2], "big")
+            )
+            if ohm is not None:
+                parsed.impedance_ohm = ohm
+                break
+    return True
+
+
+def _decode_upload_packet(framed_payload: bytes, parsed: AtfleeMeasurement) -> bool:
+    """Decode the first frame of an A5/A7 measurement upload.
+
+    Layout: [4..7] unix time, [8..11] weight word, [12] heart rate,
+    [13] impedance count, [14..] impedance shorts. Fields that spill into
+    later frames (user id, scale-computed body fat) are not read here.
+    """
+    if len(framed_payload) < 14:
+        return False
+    word = int.from_bytes(framed_payload[8:12], "big")
+    weight_kg = _word_to_kg(word)
+    if not 10.0 <= weight_kg <= 300.0:
+        return False
+
+    cmd = framed_payload[3]
+    parsed.packet_command = cmd
+    parsed.packet_sequence = framed_payload[0]
+    parsed.packet_tail = framed_payload[19] if len(framed_payload) > 19 else None
+    parsed.extended_payload_hex = framed_payload[4:19].hex()
+    parsed.weight_kg = round(weight_kg, 2)
+    if framed_payload[12]:
+        parsed.heart_rate = framed_payload[12]
+
+    count = framed_payload[13]
+    for idx in range(14, min(14 + 2 * count, 18) + 1 - 2, 2):
+        ohm = _plausible_impedance(int.from_bytes(framed_payload[idx : idx + 2], "big"))
+        if ohm is not None:
+            parsed.impedance_ohm = ohm
+            break
+
+    parsed.measure_state = "body_composition"
+    parsed.is_stable = True
+    parsed.is_body_composition_complete = True
+    return True
 
 
 def _decode_body_composition_result(framed_payload: bytes, parsed: AtfleeMeasurement) -> None:
