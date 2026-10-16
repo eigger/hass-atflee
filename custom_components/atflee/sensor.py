@@ -13,12 +13,20 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_ADDRESS, UnitOfMass, UnitOfTime
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import (
+    CONF_ADDRESS,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    UnitOfMass,
+    UnitOfTime,
+)
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import async_get as async_get_restore_state
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -265,6 +273,36 @@ _INT_KEYS = {
 }
 
 
+# Sensors that always exist. Every other sensor is created the first time the
+# scale (or the composition calculation) produces a value for it, so values the
+# scale never delivers do not show up as permanently unknown entities.
+_ALWAYS_KEYS = frozenset({"weight", "impedance", "connection_duration"})
+
+
+def _unique_id(address: str, key: str) -> str:
+    return f"{address}_{key}"
+
+
+def _is_customised(reg_entry: er.RegistryEntry) -> bool:
+    """Return True when the user changed or disabled this registry entry."""
+    return bool(
+        reg_entry.disabled_by
+        or reg_entry.name
+        or reg_entry.icon
+        or reg_entry.area_id
+        or reg_entry.labels
+    )
+
+
+def _has_stored_value(hass: HomeAssistant, entity_id: str) -> bool:
+    """Return True when the entity had a real value before the last shutdown."""
+    stored = async_get_restore_state(hass).last_states.get(entity_id)
+    return stored is not None and stored.state.state not in (
+        STATE_UNKNOWN,
+        STATE_UNAVAILABLE,
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: AtfleeConfigEntry,
@@ -272,13 +310,54 @@ async def async_setup_entry(
 ) -> None:
     """Set up Atflee sensor entities."""
     coordinator = entry.runtime_data
-    async_add_entities(
-        [
-            *(AtfleeSensorEntity(coordinator, entry, d) for d in SENSORS),
-            AtfleeFailureCountSensor(coordinator, entry),
-            AtfleeLastFailureSensor(coordinator, entry),
-        ]
-    )
+    address = entry.data[CONF_ADDRESS]
+    registry = er.async_get(hass)
+
+    def has_value(description: AtfleeSensorDescription) -> bool:
+        data = coordinator.data
+        return data is not None and description.value_fn(data) is not None
+
+    entities: list[SensorEntity] = []
+    pending: dict[str, AtfleeSensorDescription] = {}
+    for description in SENSORS:
+        if description.key in _ALWAYS_KEYS:
+            entities.append(AtfleeSensorEntity(coordinator, entry, description))
+            continue
+        entity_id = registry.async_get_entity_id(
+            "sensor", DOMAIN, _unique_id(address, description.key)
+        )
+        reg_entry = registry.async_get(entity_id) if entity_id else None
+        if reg_entry is not None:
+            if (
+                has_value(description)
+                or _is_customised(reg_entry)
+                or _has_stored_value(hass, reg_entry.entity_id)
+            ):
+                entities.append(AtfleeSensorEntity(coordinator, entry, description))
+                continue
+            # Left over from a version that created it without ever having a value.
+            registry.async_remove(reg_entry.entity_id)
+        pending[description.key] = description
+
+    entities.append(AtfleeFailureCountSensor(coordinator, entry))
+    entities.append(AtfleeLastFailureSensor(coordinator, entry))
+    async_add_entities(entities)
+
+    @callback
+    def _add_ready_sensors() -> None:
+        if entry.state is ConfigEntryState.UNLOAD_IN_PROGRESS:
+            return
+        ready = [d for d in pending.values() if has_value(d)]
+        if not ready:
+            return
+        for description in ready:
+            del pending[description.key]
+        async_add_entities(
+            [AtfleeSensorEntity(coordinator, entry, d) for d in ready]
+        )
+
+    entry.async_on_unload(coordinator.async_add_listener(_add_ready_sensors))
+    _add_ready_sensors()
 
 
 class AtfleeSensorEntity(
@@ -298,7 +377,7 @@ class AtfleeSensorEntity(
         self.entity_description = description
         self._attr_translation_key = description.key
         address = entry.data[CONF_ADDRESS]
-        self._attr_unique_id = f"{address}_{description.key}"
+        self._attr_unique_id = _unique_id(address, description.key)
         self._attr_device_info = DeviceInfo(
             connections={(CONNECTION_BLUETOOTH, address)},
             identifiers={(DOMAIN, address)},
