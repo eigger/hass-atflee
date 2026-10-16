@@ -92,6 +92,21 @@
       "skeletal_muscle_pct": {
         "name": "골격근률"
       },
+      "body_fat_mass": {
+        "name": "체지방량"
+      },
+      "fat_free_mass": {
+        "name": "제지방량"
+      },
+      "body_water_mass": {
+        "name": "체수분량"
+      },
+      "protein_mass": {
+        "name": "단백질량"
+      },
+      "skeletal_muscle_mass": {
+        "name": "골격근량"
+      },
       "physical_age": {
         "name": "신체 나이"
       },

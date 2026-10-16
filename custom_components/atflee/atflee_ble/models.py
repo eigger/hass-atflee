@@ -52,6 +52,40 @@ class AtfleeMeasurement:
     is_body_composition_complete: bool = False
     raw_hex: str | None = None
 
+    # --- 파생 체성분 (퍼센트 x 체중; 앳플리 앱 2.3.2의 targetBodyfatMass 공식과 동일) ---
+    def _mass_from_pct(self, pct: float | None) -> float | None:
+        if self.weight_kg is None or pct is None:
+            return None
+        return round(self.weight_kg * pct / 100.0, 2)
+
+    @property
+    def body_fat_mass(self) -> float | None:
+        """체지방량 kg."""
+        return self._mass_from_pct(self.body_fat_pct)
+
+    @property
+    def fat_free_mass(self) -> float | None:
+        """제지방량(LBM) kg = 체중 - 체지방량."""
+        fat = self.body_fat_mass
+        if fat is None or self.weight_kg is None:
+            return None
+        return round(self.weight_kg - fat, 2)
+
+    @property
+    def body_water_mass(self) -> float | None:
+        """체수분량 kg."""
+        return self._mass_from_pct(self.moisture_pct)
+
+    @property
+    def protein_mass(self) -> float | None:
+        """단백질량 kg."""
+        return self._mass_from_pct(self.protein_pct)
+
+    @property
+    def skeletal_muscle_mass(self) -> float | None:
+        """골격근량 kg."""
+        return self._mass_from_pct(self.skeletal_muscle_pct)
+
 
 @dataclass(slots=True)
 class AtfleeState:

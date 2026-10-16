@@ -86,6 +86,7 @@ Device setup and discovery are done through the Home Assistant UI.
   - **Body Water (%)**
   - **Protein (%)**
   - **Skeletal Muscle (%)**
+  - **Body Fat Mass / Fat-Free Mass / Body Water Mass / Protein Mass / Skeletal Muscle Mass (kg)** (calculated from weight and the matching percentage)
   - **Body Age (years)**
   - **Body Score**
   - **Heart Rate (bpm)** (if supported by model)
