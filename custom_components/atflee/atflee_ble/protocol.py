@@ -89,14 +89,11 @@ def parse_measurement_packet(payload: bytes, kg_division: int = 0) -> AtfleeMeas
     # (0x19011774): the low 18 bits are grams (0x11774 -> 71540 -> 71.54 kg).
     if len(framed_payload) >= 9:
         cmd = framed_payload[3]
-        # A0: scale-initiated reply_package request. The scale waits for a
-        # matching B0 ack before progressing past the weight stage, so we
-        # surface it as a control packet (no measurement fields) and let the
-        # coordinator send the ack.
+        # A0: the scale's reply to a message we sent (reply_package). It is
+        # surfaced as a control packet (no measurement fields) and not acked.
         if cmd == CMD_REPLY_PACKAGE:
             parsed.packet_command = cmd
             parsed.packet_sequence = framed_payload[0]
-            parsed.packet_sub_index = framed_payload[4] if len(framed_payload) > 4 else None
             parsed.packet_tail = (
                 framed_payload[19] if len(framed_payload) > 19 else None
             )
@@ -583,12 +580,13 @@ def _apply_impedances(parsed: AtfleeMeasurement, values: tuple[float, ...]) -> N
 def parse_message(
     message: AtfleeMessage, device_info: AtfleeDeviceInfo | None
 ) -> AtfleeMeasurement | None:
-    """Decode a validated A3/A4/A5/A7 message; None for other commands.
+    """Decode a validated A1/A3/A4/A5/A7 message; None for other commands.
 
     A3:     weight word(4) hr(1) impedance shorts
-    A5/A7:  time(4) weight word(4) hr(1) impedance count(1) impedance shorts
+    A7:     time(4) weight word(4) hr(1) impedance count(1) impedance shorts
             user id(4) body-fat flag(1) [body fat * 10 (2)]
-    A4:     history record, only acknowledged.
+    A4/A5:  stored history records; acknowledged but never published as the
+            live measurement.
     """
     cmd = message.command
     data = message.data
@@ -599,7 +597,7 @@ def parse_message(
     parsed.extended_payload_hex = data.hex()
     scaled = bool(device_info and device_info.impedance_scaled)
 
-    if cmd in (CMD_HISTORY, CMD_DEVICE_INFO):
+    if cmd in (CMD_HISTORY, CMD_UPLOAD_RESULT, CMD_DEVICE_INFO):
         return parsed
     if cmd == CMD_WEIGHT_STABLE:
         if len(data) < 5:
@@ -617,7 +615,7 @@ def parse_message(
         parsed.measure_state = "weight"
         parsed.is_stable = True
         return parsed
-    if cmd in (CMD_UPLOAD_RESULT, CMD_UPLOAD_RESULT_EX):
+    if cmd == CMD_UPLOAD_RESULT_EX:
         if len(data) < 10:
             return parsed
         weight_kg = _word_to_kg(int.from_bytes(data[4:8], "big"), division)

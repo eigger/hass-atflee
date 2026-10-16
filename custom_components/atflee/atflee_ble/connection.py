@@ -17,27 +17,13 @@ from homeassistant.core import HomeAssistant
 from ..const import DEBUG_READ_UUIDS, OPTIONAL_NOTIFY_UUIDS
 from .models import AtfleeDeviceInfo, AtfleeMeasurement
 from .packet import (
+    ACKED_COMMANDS,
     CMD_DEVICE_INFO,
-    CMD_HISTORY,
-    CMD_UPLOAD_RESULT,
-    CMD_UPLOAD_RESULT_EX,
-    CMD_WEIGHT_STABLE,
     AtfleeMessage,
     FrameAssembler,
 )
 from .protocol import parse_device_info, parse_measurement_packet, parse_message
 
-# Messages decoded from fully reassembled frames; everything else keeps the
-# per-frame parser.
-_MESSAGE_COMMANDS = frozenset(
-    {
-        CMD_DEVICE_INFO,
-        CMD_WEIGHT_STABLE,
-        CMD_HISTORY,
-        CMD_UPLOAD_RESULT,
-        CMD_UPLOAD_RESULT_EX,
-    }
-)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -155,16 +141,16 @@ class AtfleeBleClient:
         self._last_notify_packet = packet
         assembler = self._assemblers.setdefault(str(source).lower(), FrameAssembler())
         message = assembler.feed(packet)
-        if (
-            message is None
-            and len(packet) == 20
-            and packet[1] > 16
-            and packet[2] == 0
-            and packet[3] in _MESSAGE_COMMANDS
-        ):
-            # First frame of a multi-frame message: wait for the rest.
-            return
-        if message is not None and message.command not in _MESSAGE_COMMANDS:
+        if message is None and len(packet) == 20 and packet[1] > 16:
+            if packet[2] != 0:
+                # Continuation frame without a complete message (lost first
+                # frame or middle frame): never feed it to the per-frame parser.
+                _LOGGER.debug("Atflee continuation frame dropped: hex=%s", packet.hex())
+                return
+            if packet[3] in ACKED_COMMANDS:
+                # First frame of a multi-frame message: wait for the rest.
+                return
+        if message is not None and message.command not in ACKED_COMMANDS:
             message = None
         if self._packet_queue.full():
             try:

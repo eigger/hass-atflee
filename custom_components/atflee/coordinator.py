@@ -14,6 +14,7 @@ from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .atflee_ble.connection import AtfleeBleClient
 from .const import (
@@ -403,12 +404,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     idle_timeout,
                 )
                 
-                # Active Trigger: arm body composition measurement on connect.
-                # Sequence:
-                #   1) FFA0 0x01 — start active measurement (wake body comp module)
-                #   2) B1       — push user info so the scale can pick algorithm
-                # The scale then sends A2/A3 weight notifies followed by A5/A7
-                # with body composition results.
+                # Push the user profile (B1) on connect, with the impedance
+                # function enabled, so the scale measures impedance after the
+                # weight settles. Its A1/A3/A5/A7 messages are acked below.
                 from .atflee_ble.packet import ACKED_COMMANDS
                 from .atflee_ble.protocol import (
                     build_reply_frames,
@@ -439,21 +437,24 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                             self.entry.data.get(CONF_BIRTH_YEAR, DEFAULT_BIRTH_YEAR),
                         )
                     )
-                    now_local = datetime.now().astimezone()
+                    now_local = dt_util.now()
                     age = max(1, now_local.year - birth_year)
                     sex = str(
                         self.entry.options.get(
                             CONF_SEX, self.entry.data.get(CONF_SEX, DEFAULT_SEX)
                         )
                     )
-                    utc_offset = now_local.utcoffset()
+                    # Standard (non-DST) offset, like the scale's own clock setup.
+                    utc_offset = (now_local.utcoffset() or timedelta(0)) - (
+                        now_local.dst() or timedelta(0)
+                    )
                     user_info_frames = build_user_info_frames(
                         sex=sex,
                         age=age,
                         height_cm=self._current_height_cm(),
                         pkg_index=self.client.next_pkg_index(),
                         timestamp=int(now_local.timestamp()),
-                        utc_offset_seconds=int(utc_offset.total_seconds()) if utc_offset else 0,
+                        utc_offset_seconds=int(utc_offset.total_seconds()),
                     )
                     await self.client.send_frames(user_info_frames)
                 else:
@@ -491,14 +492,15 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         measurement.packet_command in ACKED_COMMANDS
                         and measurement.packet_sequence is not None
                     ):
-                        await self.client.send_frames(
+                        acked = await self.client.send_frames(
                             build_reply_frames(
                                 pkg_index=self.client.next_pkg_index(),
                                 reply_index=measurement.packet_sequence,
                             )
                         )
                         _LOGGER.debug(
-                            "Atflee ack sent: cmd=0x%02X reply_index=%s",
+                            "Atflee ack %s: cmd=0x%02X reply_index=%s",
+                            "sent" if acked else "failed",
                             measurement.packet_command,
                             measurement.packet_sequence,
                         )
