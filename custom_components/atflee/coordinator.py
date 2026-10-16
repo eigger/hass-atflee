@@ -300,13 +300,12 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                 measurement.weight_kg,
             )
             return
-        weight = measurement.weight_kg
         measurement.bmi = round(result.bmi, 1)
         measurement.body_fat_pct = result.body_fat_pct
         measurement.subcutaneous_fat_pct = result.subcutaneous_fat_pct
         measurement.visceral_fat = result.visceral_fat
         measurement.muscle_pct = result.muscle_pct
-        measurement.muscle_mass = round(weight * result.muscle_pct / 100.0, 2)
+        measurement.muscle_mass = result.muscle_mass_kg
         measurement.bmr = result.bmr_kcal
         measurement.bone_mass = round(result.bone_mass_kg, 2)
         measurement.moisture_pct = result.water_pct

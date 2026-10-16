@@ -14,7 +14,8 @@ import struct
 
 # Weight/height/age limits outside which the calculation yields nothing.
 _HEIGHT_RANGE = (100, 220)
-_AGE_RANGE = (10, 99)
+_ADULT_AGE = 18  # the child BMI table is not ported
+_MAX_AGE = 99
 _WEIGHT_RANGE = (20.0, 200.0)
 MIN_IMPEDANCE_OHM = 10.0
 IMPEDANCE_CHANNELS = 10
@@ -27,6 +28,7 @@ class BodyComposition:
     bmi: float
     body_fat_pct: float
     muscle_pct: float
+    muscle_mass_kg: float
     subcutaneous_fat_pct: float
     visceral_fat: float
     bone_mass_kg: float
@@ -53,7 +55,7 @@ def _round1(value: float) -> float:
     digits = _f32(math.fmod(as_float, 1.0) * 10.0)
     if _f32(math.fmod(digits, 1.0)) > 0.5:
         digits = _f32(digits + 1.0)
-    return float(int(digits)) / 10.0 + _f32(float(int(value)))
+    return _f32(_f32(float(int(digits)) / 10.0) + _f32(float(int(value))))
 
 
 def _standard_bmi(male: bool) -> float:
@@ -61,8 +63,8 @@ def _standard_bmi(male: bool) -> float:
 
 
 def _standard_weight(height_cm: int, male: bool) -> float:
-    meters = _f32(height_cm) / 100.0
-    return meters * meters * _f32(_standard_bmi(male))
+    meters = _f32(_f32(height_cm) / 100.0)
+    return _f32(_f32(meters * meters) * _f32(_standard_bmi(male)))
 
 
 def _standard_bfm(height_cm: int, male: bool) -> float:
@@ -75,7 +77,7 @@ def _standard_ffm(height_cm: int, male: bool) -> float:
 
 def _score(height_cm: int, weight: float, male: bool, body_fat: float) -> int:
     weight32 = _f32(weight)
-    fat_mass = _f32((_f32(body_fat) / 100.0) * weight32)
+    fat_mass = _f32(_f32(_f32(body_fat) / 100.0) * weight32)
     standard = _standard_weight(height_cm, male)
     fat_excess = _f32(fat_mass - _f32((0.15 if male else 0.23) * standard))
     lean = _f32(_f32(weight32 - fat_mass) - _f32((0.85 if male else 0.77) * standard))
@@ -116,7 +118,7 @@ def calculate_body_composition(
         return None
     if not _HEIGHT_RANGE[0] <= height_cm <= _HEIGHT_RANGE[1]:
         return None
-    if not _AGE_RANGE[0] <= age <= _AGE_RANGE[1] or age < 18:
+    if not _ADULT_AGE <= age <= _MAX_AGE:
         return None
     if not _WEIGHT_RANGE[0] <= weight_kg <= _WEIGHT_RANGE[1]:
         return None
@@ -149,6 +151,8 @@ def calculate_body_composition(
     else:
         body_fat += 0.1  # the original adds a small random amount here
 
+    if body_fat <= 0.0:
+        return None
     fat_mass = w * body_fat / 100.0
     lean = w - fat_mass
     subcutaneous = body_fat * (body_fat * -0.0002 + 0.72)
@@ -193,12 +197,13 @@ def calculate_body_composition(
     standard_fat = _round1(_standard_bfm(height_cm, male))
     standard_lean = max(_round1(_standard_ffm(height_cm, male)), 0.0)
     fat_control = _f32(_round1(standard_fat - fat_mass))
-    muscle_control = max(_round1(_f32(standard_lean - lean)), 0.0)
+    muscle_control = max(_round1(standard_lean - lean), 0.0)
 
     return BodyComposition(
         bmi=round(bmi, 1),
         body_fat_pct=_round1(body_fat),
         muscle_pct=_round1(muscle_mass / w * 100.0),
+        muscle_mass_kg=round(muscle_mass, 2),
         subcutaneous_fat_pct=_round1(subcutaneous),
         visceral_fat=visceral,
         bone_mass_kg=round(_round1(bone) / 10.0, 2),
