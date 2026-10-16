@@ -37,6 +37,10 @@ _LOGGER = logging.getLogger(__name__)
 WATCHDOG_INTERVAL = timedelta(seconds=5)
 
 
+# PEP 695 alias: evaluated lazily, so the forward reference is fine.
+type AtfleeConfigEntry = ConfigEntry[AtfleeDataUpdateCoordinator]
+
+
 class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
     """Coordinate BLE updates for one Atflee scale.
 
@@ -47,7 +51,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
     4) Disconnect when idle timeout passes without packet.
     """
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: AtfleeConfigEntry) -> None:
         self.entry = entry
         self.address: str = entry.data[CONF_ADDRESS]
         self.client = AtfleeBleClient(hass, self.address)
@@ -84,6 +88,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=f"{DOMAIN}_{self.address}",
             update_interval=None,
         )

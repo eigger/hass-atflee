@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import AtfleeDataUpdateCoordinator
+from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
 
 CONNECTION_SENSOR = BinarySensorEntityDescription(
     key="ble_connection",
@@ -27,11 +27,11 @@ CONNECTION_SENSOR = BinarySensorEntityDescription(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: AtfleeConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Atflee binary sensors."""
-    coordinator: AtfleeDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     async_add_entities([AtfleeConnectionBinarySensor(coordinator, entry)])
 
 
