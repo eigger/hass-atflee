@@ -289,8 +289,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             for name in ("body_fat_pct", "moisture_pct", "protein_pct", "skeletal_muscle_pct")
             if getattr(measurement, name) is not None
         )
+        packet_weight = measurement.weight_kg
         if prev_measurement is None:
-            measurement.compute_masses(fresh)
+            measurement.compute_masses(fresh, packet_weight)
             return measurement
 
         # 기본 체중/체성분
@@ -341,7 +342,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         ):
             if getattr(measurement, name) is None:
                 setattr(measurement, name, getattr(prev_measurement, name))
-        measurement.compute_masses(fresh)
+        measurement.compute_masses(fresh, packet_weight)
 
         return measurement
 

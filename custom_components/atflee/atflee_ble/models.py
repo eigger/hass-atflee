@@ -59,14 +59,14 @@ class AtfleeMeasurement:
     protein_mass: float | None = None           # 단백질량 kg
     skeletal_muscle_mass: float | None = None   # 골격근량 kg
 
-    def compute_masses(self, fresh: frozenset[str]) -> None:
+    def compute_masses(self, fresh: frozenset[str], weight: float | None) -> None:
         """Compute kg values from percentages that arrived with this packet.
 
-        ``fresh`` names the percentage fields set by the current packet, so a
-        mass is never built from a percentage carried over from an earlier
-        measurement. Existing mass values are left untouched otherwise.
+        ``fresh`` names the percentage fields set by the current packet and
+        ``weight`` is the weight carried by that same packet, so a mass is never
+        built from a percentage or weight of an earlier measurement. A fresh
+        percentage that cannot produce a valid mass clears the stale value.
         """
-        weight = self.weight_kg
 
         def mass(pct: float | None) -> float | None:
             if weight is None or pct is None or not 0.0 <= pct <= 100.0:
@@ -75,19 +75,15 @@ class AtfleeMeasurement:
 
         if "body_fat_pct" in fresh:
             fat = mass(self.body_fat_pct)
-            if fat is not None and weight is not None:
-                self.body_fat_mass = fat
-                self.fat_free_mass = round(weight - fat, 2)
+            self.body_fat_mass = fat
+            self.fat_free_mass = None if fat is None else round(weight - fat, 2)
         for field, pct_field in (
             ("body_water_mass", "moisture_pct"),
             ("protein_mass", "protein_pct"),
             ("skeletal_muscle_mass", "skeletal_muscle_pct"),
         ):
             if pct_field in fresh:
-                value = mass(getattr(self, pct_field))
-                if value is not None:
-                    setattr(self, field, value)
-
+                setattr(self, field, mass(getattr(self, pct_field)))
 
 
 @dataclass(slots=True)
