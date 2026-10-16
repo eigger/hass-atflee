@@ -63,6 +63,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         # Failure count / last failure time for the diagnostic sensors. Resets
         # on entry reload; only sessions that ended in an error are counted.
         self.session_reports = SessionReports()
+        # Retries inside one wake (watchdog re-fires every few seconds while the
+        # scale stays present) count as one failure, not one per attempt.
+        self._failure_recorded_this_wake: bool = False
         self._connected_started_monotonic: float | None = None
         self._last_session_end_monotonic: float = 0.0
         self._reconnect_cooldown_seconds: float = 5.0
@@ -185,6 +188,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     self.address,
                 )
             self._handled_current_presence = False
+            self._failure_recorded_this_wake = False
             return
         if self._handled_current_presence:
             return
@@ -376,6 +380,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     profiles=GATT_PROFILES,
                 )
                 connected = True
+                self._failure_recorded_this_wake = False
                 _LOGGER.debug(
                     "Atflee session connected: address=%s idle_timeout=%.1fs",
                     self.address,
@@ -582,11 +587,15 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     self._adv_callback_count,
                     self._reconnect_cooldown_seconds,
                 )
-                if not cancelled:
+                if not cancelled and not (
+                    outcome is not None and self._failure_recorded_this_wake
+                ):
                     try:
                         self.session_reports.record(
                             fallback_report("measure", exc=outcome)
                         )
+                        if outcome is not None:
+                            self._failure_recorded_this_wake = True
                     except Exception:  # noqa: BLE001 - diagnostics must never break a session
                         _LOGGER.debug("Atflee session report failed for %s", self.address)
                 self.async_set_updated_data(self._build_state(connected=False, measuring=False))
