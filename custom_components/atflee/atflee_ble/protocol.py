@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import struct
 from typing import Any
 
 from .models import AtfleeMeasurement
@@ -16,6 +17,7 @@ from .packet import (
     CMD_UPLOAD_RESULT_EX,
     CMD_WEIGHT_STABLE,
     CMD_WEIGHT_UNSTABLE,
+    PROTOCOL_VER,
     build_packet,
     parse_frame,
 )
@@ -81,8 +83,8 @@ def parse_measurement_packet(payload: bytes) -> AtfleeMeasurement:
     # Observed examples:
     #   010700a201190117740000000000000000000008
     #   020700a201190117740000000000000000000008
-    # Here, weight is encoded in 3-byte big-endian at [6:9]:
-    #   0x011774 -> 71540 -> 71.54 kg (divide by 1000).
+    # Here the A2 weight word is the big-endian 32-bit value at [5..8]
+    # (0x19011774): the low 18 bits are grams (0x11774 -> 71540 -> 71.54 kg).
     if len(framed_payload) >= 9:
         cmd = framed_payload[3]
         # A0: scale-initiated reply_package request. The scale waits for a
@@ -107,11 +109,20 @@ def parse_measurement_packet(payload: bytes) -> AtfleeMeasurement:
         # shift offsets; we record the raw extended bytes regardless so an
         # unparsable layout still surfaces in diagnostics.
         if cmd in (CMD_UPLOAD_RESULT, CMD_UPLOAD_RESULT_EX):
-            if not _decode_upload_packet(framed_payload, parsed):
-                _decode_body_composition_result(framed_payload, parsed)
+            if _decode_upload_packet(framed_payload, parsed):
+                return parsed
+            if framed_payload[1] == PROTOCOL_VER:
+                _mark_control_packet(framed_payload, parsed)
+                return parsed
+            _decode_body_composition_result(framed_payload, parsed)
             return parsed
         if cmd in (CMD_WEIGHT_UNSTABLE, CMD_WEIGHT_STABLE):
             if _decode_weight_packet(framed_payload, cmd, parsed):
+                return parsed
+            if framed_payload[1] == PROTOCOL_VER:
+                # Known layout but no plausible weight: never guess one from
+                # bytes that belong to other fields.
+                _mark_control_packet(framed_payload, parsed)
                 return parsed
             # Device firmware variants use different 3-byte BE offsets for weight.
             # Known candidates:
@@ -427,15 +438,26 @@ def build_reply_ack_packet(
 _WEIGHT_MASK = 0x3FFFF
 
 
+def _f32(value: float) -> float:
+    """Round a Python float to single precision like the firmware math."""
+    return struct.unpack("f", struct.pack("f", value))[0]
+
+
 def _word_to_kg(word: int) -> float:
-    """Convert a packed weight word to kg using the scale's rounding rules."""
+    """Convert a packed weight word to kg using the scale's rounding rules.
+
+    Code 0 is used when the device reports no rounding code; the scale may also
+    advertise a division through its device-info packet, which is not read here.
+    """
     grams = float(word & _WEIGHT_MASK)
     code = (word >> 18) & 0x7
-    kg = grams / 1000.0
-    scaled = kg * 1000.0 if code < 3 else kg * 100.0
+    kg = _f32(grams / 1000.0)
+    if code > 4:
+        return kg
+    scaled = _f32(kg * (1000.0 if code < 3 else 100.0))
     # The firmware nudges values whose next decimal digit is 9 upwards.
-    if int(scaled * 10.0) % 10 >= 9:
-        scaled += 1.0
+    if int(_f32(scaled * 10.0)) % 10 >= 9:
+        scaled = _f32(scaled + 1.0)
     value = int(scaled)
     if code == 0:
         return int((value + 5) / 10.0) / 100.0
@@ -444,19 +466,21 @@ def _word_to_kg(word: int) -> float:
             value += 10
         half = int(value / 10.0)
         half += half & 1
-        return half / 100.0 if code == 1 else half / 10.0
+        return half / 100.0 if code == 1 else _f32(half / 10.0)
     if code == 2:
         tens = int((value + 20) / 10.0)
         base = (tens // 10) * 10
         return (base + 5 if tens % 10 >= 5 else base) / 100.0
-    return int((value + 5) / 10.0) / 10.0
+    return _f32(int((value + 5) / 10.0) / 10.0)
 
 
 def _plausible_impedance(raw: int) -> int | None:
     """Return ohms for a raw impedance short (some scales report ohm * 10)."""
     if 100 <= raw <= 1500:
         return raw
-    if 1000 < raw <= 15000:
+    # Scales flagged "impedance x10" report 1000-15000 for 100-1500 ohm;
+    # anything up to 1500 is taken as plain ohms.
+    if 1500 < raw <= 15000:
         return int(round(raw / 10.0))
     return None
 
@@ -495,13 +519,10 @@ def _decode_weight_packet(
     if cmd == CMD_WEIGHT_UNSTABLE and len(framed_payload) > 4:
         parsed.measure_status = framed_payload[4]
     if cmd == CMD_WEIGHT_STABLE:
-        for idx in range(hr_at + 1, min(len(framed_payload) - 1, 19) - 1, 2):
-            ohm = _plausible_impedance(
-                int.from_bytes(framed_payload[idx : idx + 2], "big")
-            )
-            if ohm is not None:
-                parsed.impedance_ohm = ohm
-                break
+        # The impedance count and scale come from the device-info packet,
+        # which is not read here, so keep the conservative single-candidate
+        # probe; A5/A7 carry an explicit count and are decoded exactly.
+        _extract_inline_impedance(framed_payload, parsed)
     return True
 
 
@@ -528,17 +549,23 @@ def _decode_upload_packet(framed_payload: bytes, parsed: AtfleeMeasurement) -> b
     if framed_payload[12]:
         parsed.heart_rate = framed_payload[12]
 
-    count = framed_payload[13]
-    for idx in range(14, min(14 + 2 * count, 18) + 1 - 2, 2):
-        ohm = _plausible_impedance(int.from_bytes(framed_payload[idx : idx + 2], "big"))
+    if framed_payload[13] and len(framed_payload) >= 16:
+        ohm = _plausible_impedance(int.from_bytes(framed_payload[14:16], "big"))
         if ohm is not None:
             parsed.impedance_ohm = ohm
-            break
 
     parsed.measure_state = "body_composition"
     parsed.is_stable = True
     parsed.is_body_composition_complete = True
     return True
+
+
+def _mark_control_packet(framed_payload: bytes, parsed: AtfleeMeasurement) -> None:
+    """Record packet metadata only, leaving every measurement field unset."""
+    parsed.packet_command = framed_payload[3]
+    parsed.packet_sequence = framed_payload[0]
+    parsed.packet_tail = framed_payload[19] if len(framed_payload) > 19 else None
+    parsed.extended_payload_hex = framed_payload[4:19].hex()
 
 
 def _decode_body_composition_result(framed_payload: bytes, parsed: AtfleeMeasurement) -> None:
