@@ -16,6 +16,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
+from .atflee_ble.bodycomp import IMPEDANCE_CHANNELS, calculate_body_composition
 from .atflee_ble.connection import AtfleeBleClient
 from .const import (
     CONF_HEIGHT_CM,
@@ -254,6 +255,68 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             )
         )
 
+    def _user_profile(self) -> tuple[int, int, str]:
+        """Return (height_cm, age, sex) from the entry configuration."""
+        from .const import (
+            CONF_BIRTH_YEAR,
+            CONF_SEX,
+            DEFAULT_BIRTH_YEAR,
+            DEFAULT_SEX,
+        )
+
+        birth_year = int(
+            self.entry.options.get(
+                CONF_BIRTH_YEAR,
+                self.entry.data.get(CONF_BIRTH_YEAR, DEFAULT_BIRTH_YEAR),
+            )
+        )
+        sex = str(
+            self.entry.options.get(CONF_SEX, self.entry.data.get(CONF_SEX, DEFAULT_SEX))
+        )
+        age = max(1, dt_util.now().year - birth_year)
+        return self._current_height_cm(), age, sex
+
+    def _apply_body_composition(self, measurement: AtfleeMeasurement) -> None:
+        """Fill the composition fields from a full impedance set, if present."""
+        if (
+            measurement.weight_kg is None
+            or measurement.impedances_ohm is None
+            or len(measurement.impedances_ohm) < IMPEDANCE_CHANNELS
+        ):
+            return
+        height_cm, age, sex = self._user_profile()
+        result = calculate_body_composition(
+            measurement.weight_kg,
+            height_cm,
+            age,
+            sex.lower() in ("male", "m", "1"),
+            measurement.impedances_ohm,
+        )
+        if result is None:
+            _LOGGER.debug(
+                "Atflee body composition skipped: height=%s age=%s weight=%s",
+                height_cm,
+                age,
+                measurement.weight_kg,
+            )
+            return
+        weight = measurement.weight_kg
+        measurement.bmi = round(result.bmi, 1)
+        measurement.body_fat_pct = result.body_fat_pct
+        measurement.subcutaneous_fat_pct = result.subcutaneous_fat_pct
+        measurement.visceral_fat = result.visceral_fat
+        measurement.muscle_pct = result.muscle_pct
+        measurement.muscle_mass = round(weight * result.muscle_pct / 100.0, 2)
+        measurement.bmr = result.bmr_kcal
+        measurement.bone_mass = round(result.bone_mass_kg, 2)
+        measurement.moisture_pct = result.water_pct
+        measurement.protein_pct = result.protein_pct
+        measurement.skeletal_muscle_pct = result.skeletal_muscle_pct
+        measurement.physical_age = result.physical_age
+        measurement.body_score = float(result.body_score)
+        measurement.measure_state = "body_composition"
+        measurement.is_body_composition_complete = True
+
     def _idle_timeout_seconds(self) -> float:
         return float(
             self.entry.options.get(
@@ -413,11 +476,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     build_user_info_frames,
                 )
                 from .const import (
-                    CONF_BIRTH_YEAR,
-                    CONF_SEX,
                     CONF_ENABLE_BODY_COMP,
-                    DEFAULT_BIRTH_YEAR,
-                    DEFAULT_SEX,
                     DEFAULT_ENABLE_BODY_COMP,
                 )
 
@@ -431,19 +490,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                 )
 
                 if send_enabled:
-                    birth_year = int(
-                        self.entry.options.get(
-                            CONF_BIRTH_YEAR,
-                            self.entry.data.get(CONF_BIRTH_YEAR, DEFAULT_BIRTH_YEAR),
-                        )
-                    )
                     now_local = dt_util.now()
-                    age = max(1, now_local.year - birth_year)
-                    sex = str(
-                        self.entry.options.get(
-                            CONF_SEX, self.entry.data.get(CONF_SEX, DEFAULT_SEX)
-                        )
-                    )
+                    height_cm, age, sex = self._user_profile()
                     # Standard (non-DST) offset, like the scale's own clock setup.
                     utc_offset = (now_local.utcoffset() or timedelta(0)) - (
                         now_local.dst() or timedelta(0)
@@ -451,7 +499,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     user_info_frames = build_user_info_frames(
                         sex=sex,
                         age=age,
-                        height_cm=self._current_height_cm(),
+                        height_cm=height_cm,
                         pkg_index=self.client.next_pkg_index(),
                         timestamp=int(now_local.timestamp()),
                         utc_offset_seconds=int(utc_offset.total_seconds()),
@@ -507,6 +555,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
 
                     if measurement.measure_state == "handshake":
                         continue
+
+                    self._apply_body_composition(measurement)
 
                     # Ignore control/heartbeat packets that do not carry any mapped value.
                     # Example: 001a010000... (frequently interleaved with stable A3).
