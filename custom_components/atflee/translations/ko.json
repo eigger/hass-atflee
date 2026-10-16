@@ -130,6 +130,12 @@
       },
       "connection_duration": {
         "name": "연결 시간"
+      },
+      "failure_count": {
+        "name": "실패 횟수"
+      },
+      "last_failure": {
+        "name": "마지막 실패"
       }
     },
     "binary_sensor": {

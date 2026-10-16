@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable
 
 from homeassistant.components.sensor import (
@@ -272,7 +273,11 @@ async def async_setup_entry(
     """Set up Atflee sensor entities."""
     coordinator: AtfleeDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities(
-        [AtfleeSensorEntity(coordinator, entry, description) for description in SENSORS]
+        [
+            *(AtfleeSensorEntity(coordinator, entry, d) for d in SENSORS),
+            AtfleeFailureCountSensor(coordinator, entry),
+            AtfleeLastFailureSensor(coordinator, entry),
+        ]
     )
 
 
@@ -345,10 +350,22 @@ class AtfleeSensorEntity(
         return self._restored_native_value
 
     @property
-    def extra_state_attributes(self) -> dict[str, str | int | bool | None]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Attach raw packet and body composition fields for diagnostic purposes."""
         state = self.coordinator.data
         m = state.measurement
+        attrs = self._packet_attributes(state, m)
+        if self.entity_description.key == "connection_duration":
+            # The last session's breakdown (stages, radio, likely cause); not
+            # while a session runs, so it is never shown against its time.
+            if not self.coordinator.session_report_pending:
+                report = self.coordinator.session_reports.last
+                if report:
+                    attrs = {**attrs, **report}
+        return attrs
+
+    @staticmethod
+    def _packet_attributes(state: AtfleeState, m: Any) -> dict[str, Any]:
         return {
             # 패킷 진단
             "last_packet_hex": state.last_packet_hex,
@@ -374,3 +391,52 @@ class AtfleeSensorEntity(
             "extended_payload_hex": m.extended_payload_hex if m else None,
             "updated_at": state.updated_at.isoformat() if state.updated_at else None,
         }
+
+
+class _AtfleeFailureSensor(CoordinatorEntity[AtfleeDataUpdateCoordinator], SensorEntity):
+    """Diagnostic sensor backed by the coordinator's blesession SessionReports."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _key: str
+
+    def __init__(self, coordinator: AtfleeDataUpdateCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        address = entry.data[CONF_ADDRESS]
+        self._attr_translation_key = self._key
+        self._attr_unique_id = f"{address}_{self._key}"
+        self._attr_device_info = DeviceInfo(
+            connections={(CONNECTION_BLUETOOTH, address)},
+            identifiers={(DOMAIN, address)},
+            name=entry.title,
+            manufacturer="Atflee",
+            model="BLE Scale",
+        )
+
+
+class AtfleeFailureCountSensor(_AtfleeFailureSensor):
+    """Number of failed sessions since the entry was loaded."""
+
+    _key = "failure_count"
+    _attr_icon = "mdi:alert-circle-outline"
+
+    @property
+    def native_value(self) -> int:
+        return self.coordinator.session_reports.failures
+
+
+class AtfleeLastFailureSensor(_AtfleeFailureSensor):
+    """When the last failed session happened."""
+
+    _key = "last_failure"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:clock-alert-outline"
+
+    @property
+    def native_value(self) -> datetime | None:
+        return self.coordinator.session_reports.last_failure_at
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        report = self.coordinator.session_reports.last_failure
+        return dict(report) if report else None

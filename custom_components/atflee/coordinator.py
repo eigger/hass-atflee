@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import logging
 from time import monotonic
 
+from blesession import SessionReports, fallback_report, stages
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS
@@ -23,6 +24,7 @@ from .const import (
     GATT_PROFILES,
 )
 from .atflee_ble.models import AtfleeMeasurement, AtfleeState
+from .session_report import ARM, MEASURE, SessionTrace, build_session_report
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,6 +61,15 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         self._handled_current_presence: bool = False
         self._session_task: asyncio.Task | None = None
         self._session_lock = asyncio.Lock()
+        # Failure count / last failure time for the diagnostic sensors. Resets
+        # on entry reload; only sessions that ended in an error are counted.
+        self.session_reports = SessionReports()
+        # Retries inside one wake (watchdog re-fires every few seconds while the
+        # scale stays present) count as one failure, not one per attempt.
+        self._failure_recorded_this_wake: bool = False
+        # True while a session runs, so the Connection Duration sensor does not
+        # show the previous session's breakdown against this one's time.
+        self.session_report_pending: bool = False
         self._connected_started_monotonic: float | None = None
         self._last_session_end_monotonic: float = 0.0
         self._reconnect_cooldown_seconds: float = 5.0
@@ -181,6 +192,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     self.address,
                 )
             self._handled_current_presence = False
+            self._failure_recorded_this_wake = False
             return
         if self._handled_current_presence:
             return
@@ -363,11 +375,23 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             )
 
             idle_timeout = self._idle_timeout_seconds()
+            connected = False
+            outcome: BaseException | None = None
+            cancelled = False
+            trace = SessionTrace()
+            packets = 0
+            arm_started: float | None = None
+            measure_started: float | None = None
+            self.session_report_pending = True
             try:
-                await self.client.connect_with_profiles(
-                    ble_device=ble_device,
-                    profiles=GATT_PROFILES,
-                )
+                with trace.timed(stages.CONNECT):
+                    await self.client.connect_with_profiles(
+                        ble_device=ble_device,
+                        profiles=GATT_PROFILES,
+                    )
+                connected = True
+                arm_started = monotonic()
+                self._failure_recorded_this_wake = False
                 _LOGGER.debug(
                     "Atflee session connected: address=%s idle_timeout=%.1fs",
                     self.address,
@@ -449,6 +473,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
 
                 self.async_set_updated_data(self._build_state(connected=True, measuring=True))
 
+                trace.record(ARM, monotonic() - arm_started)
+                arm_started = None
+                measure_started = monotonic()
                 last_event = monotonic()
                 while True:
                     remaining = idle_timeout - (monotonic() - last_event)
@@ -456,6 +483,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         break
                     measurement = await self.client.wait_for_measurement(timeout_seconds=remaining)
                     last_event = monotonic()
+                    packets += 1
                     _LOGGER.debug(
                         "Atflee measurement packet parsed: weight=%s bmi=%s body_fat=%s imp=%s state=%s stable=%s complete=%s raw=%s",
                         measurement.weight_kg,
@@ -528,14 +556,31 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                             measuring=not measurement.is_body_composition_complete,
                         )
                     )
-            except TimeoutError:
-                # Normal end: measured then went idle. Keep this wake "handled"
-                # so we don't immediately re-measure while still advertising.
-                _LOGGER.debug("Atflee session idle timeout for %s", self.address)
+            except TimeoutError as err:
+                if connected and measure_started is not None:
+                    # Normal end: measured then went idle. Keep this wake
+                    # "handled" so we don't immediately re-measure while still
+                    # advertising.
+                    _LOGGER.debug("Atflee session idle timeout for %s", self.address)
+                else:
+                    # Timed out before the link was up, or before measuring
+                    # started: a failure, not an idle end. Allow a retry once
+                    # the cooldown elapses.
+                    outcome = err
+                    self._handled_current_presence = False
+                    if connected:
+                        trace.fail(ARM)
+                    _LOGGER.debug("Atflee session timed out for %s: %s", self.address, err)
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
             except Exception as err:  # noqa: BLE001
                 # Abnormal end (connect/notify failure): allow a retry on the
                 # next watchdog tick once the cooldown elapses.
+                outcome = err
                 self._handled_current_presence = False
+                if connected:
+                    trace.fail(ARM if measure_started is None else MEASURE)
                 _LOGGER.debug("Atflee session failed for %s: %s", self.address, err)
             finally:
                 # Bounded so a stuck BLE peer never pins this task in the
@@ -562,6 +607,36 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     self._adv_callback_count,
                     self._reconnect_cooldown_seconds,
                 )
+                if measure_started is not None:
+                    trace.record(MEASURE, monotonic() - measure_started)
+                elif arm_started is not None:
+                    trace.record(ARM, monotonic() - arm_started)
+                trace.note(packets=packets)
+                if not cancelled:
+                    self.session_report_pending = False
+                    if not (outcome is not None and self._failure_recorded_this_wake):
+                        try:
+                            try:
+                                report = build_session_report(
+                                    self.hass,
+                                    self.address,
+                                    operation="measure",
+                                    trace=trace,
+                                    exc=outcome,
+                                )
+                            except Exception as report_err:  # noqa: BLE001
+                                # Diagnostics must not mask the session's own outcome.
+                                _LOGGER.debug(
+                                    "Building the session report failed: %s", report_err
+                                )
+                                report = fallback_report(
+                                    "measure", trace=trace, exc=outcome
+                                )
+                            self.session_reports.record(report)
+                            if outcome is not None:
+                                self._failure_recorded_this_wake = True
+                        except Exception:  # noqa: BLE001 - diagnostics must never break a session
+                            _LOGGER.debug("Atflee session report failed for %s", self.address)
                 self.async_set_updated_data(self._build_state(connected=False, measuring=False))
 
     async def _async_update_data(self) -> AtfleeState:
