@@ -60,14 +60,14 @@ def scale_cause(
         )
     if where == ARM:
         return (
-            "Connected, but the scale did not take the start-measurement or "
-            "user-info writes: the link dropped, or the phone app holds the "
-            f"scale.{advice}"
+            "Connected, but preparing the measurement (start command or "
+            "user-info packet) raised an error: check the configured height, "
+            "birth year and sex, or open an issue with the error text."
         )
     if where == MEASURE:
         return (
-            "The link dropped while waiting for measurement packets: the "
-            f"scale went back to sleep or the signal is weak.{advice}"
+            "A measurement packet could not be processed after the link was "
+            "up: open an issue with the error text and the packet log."
         )
     return None
 
