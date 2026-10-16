@@ -78,7 +78,9 @@
       "verify_status": { "name": "Verify Status" },
       "measure_status": { "name": "Measure Status" },
       "scale_status": { "name": "Scale Status" },
-      "connection_duration": { "name": "Connection Duration" }
+      "connection_duration": { "name": "Connection Duration" },
+      "failure_count": { "name": "Failure Count" },
+      "last_failure": { "name": "Last Failure" }
     },
     "binary_sensor": {
       "ble_connection": { "name": "Connection" }

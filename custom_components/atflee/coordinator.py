@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import logging
 from time import monotonic
 
+from blesession import SessionReports, fallback_report
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS
@@ -59,6 +60,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         self._handled_current_presence: bool = False
         self._session_task: asyncio.Task | None = None
         self._session_lock = asyncio.Lock()
+        # Failure count / last failure time for the diagnostic sensors. Resets
+        # on entry reload; only sessions that ended in an error are counted.
+        self.session_reports = SessionReports()
         self._connected_started_monotonic: float | None = None
         self._last_session_end_monotonic: float = 0.0
         self._reconnect_cooldown_seconds: float = 5.0
@@ -363,11 +367,15 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             )
 
             idle_timeout = self._idle_timeout_seconds()
+            connected = False
+            outcome: BaseException | None = None
+            cancelled = False
             try:
                 await self.client.connect_with_profiles(
                     ble_device=ble_device,
                     profiles=GATT_PROFILES,
                 )
+                connected = True
                 _LOGGER.debug(
                     "Atflee session connected: address=%s idle_timeout=%.1fs",
                     self.address,
@@ -528,13 +536,25 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                             measuring=not measurement.is_body_composition_complete,
                         )
                     )
-            except TimeoutError:
-                # Normal end: measured then went idle. Keep this wake "handled"
-                # so we don't immediately re-measure while still advertising.
-                _LOGGER.debug("Atflee session idle timeout for %s", self.address)
+            except TimeoutError as err:
+                if connected:
+                    # Normal end: measured then went idle. Keep this wake
+                    # "handled" so we don't immediately re-measure while still
+                    # advertising.
+                    _LOGGER.debug("Atflee session idle timeout for %s", self.address)
+                else:
+                    # Timed out before the link was up: a connect failure, not
+                    # an idle end. Allow a retry once the cooldown elapses.
+                    outcome = err
+                    self._handled_current_presence = False
+                    _LOGGER.debug("Atflee connect timed out for %s: %s", self.address, err)
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
             except Exception as err:  # noqa: BLE001
                 # Abnormal end (connect/notify failure): allow a retry on the
                 # next watchdog tick once the cooldown elapses.
+                outcome = err
                 self._handled_current_presence = False
                 _LOGGER.debug("Atflee session failed for %s: %s", self.address, err)
             finally:
@@ -562,6 +582,13 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     self._adv_callback_count,
                     self._reconnect_cooldown_seconds,
                 )
+                if not cancelled:
+                    try:
+                        self.session_reports.record(
+                            fallback_report("measure", exc=outcome)
+                        )
+                    except Exception:  # noqa: BLE001 - diagnostics must never break a session
+                        _LOGGER.debug("Atflee session report failed for %s", self.address)
                 self.async_set_updated_data(self._build_state(connected=False, measuring=False))
 
     async def _async_update_data(self) -> AtfleeState:
