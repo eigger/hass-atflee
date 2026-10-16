@@ -7,18 +7,20 @@ import logging
 import struct
 from typing import Any
 
-from .models import AtfleeMeasurement
+from .models import AtfleeDeviceInfo, AtfleeMeasurement
 from .packet import (
+    CMD_DEVICE_INFO,
+    CMD_HISTORY,
     CMD_REPLY_ACK,
     CMD_REPLY_PACKAGE,
-    CMD_START_MEASURE,
     CMD_USER_INFO,
     CMD_UPLOAD_RESULT,
     CMD_UPLOAD_RESULT_EX,
     CMD_WEIGHT_STABLE,
     CMD_WEIGHT_UNSTABLE,
     PROTOCOL_VER,
-    build_packet,
+    AtfleeMessage,
+    build_frames,
     parse_frame,
 )
 from .protocol_spec import NATIVE_MEASUREMENT_KEYS
@@ -26,7 +28,7 @@ from .protocol_spec import NATIVE_MEASUREMENT_KEYS
 _LOGGER = logging.getLogger(__name__)
 
 
-def parse_measurement_packet(payload: bytes) -> AtfleeMeasurement:
+def parse_measurement_packet(payload: bytes, kg_division: int = 0) -> AtfleeMeasurement:
     """Parse a notification payload into a normalized measurement model.
 
     The Atflee packet format varies by device firmware. This parser
@@ -110,7 +112,7 @@ def parse_measurement_packet(payload: bytes) -> AtfleeMeasurement:
         # unparsable layout still surfaces in diagnostics.
         if cmd in (CMD_UPLOAD_RESULT, CMD_UPLOAD_RESULT_EX):
             if framed_payload[1] == PROTOCOL_VER:
-                if not _decode_upload_packet(framed_payload, parsed):
+                if not _decode_upload_packet(framed_payload, parsed, kg_division):
                     _mark_control_packet(framed_payload, parsed)
                 return parsed
             _decode_body_composition_result(framed_payload, parsed)
@@ -119,7 +121,7 @@ def parse_measurement_packet(payload: bytes) -> AtfleeMeasurement:
             if framed_payload[1] == PROTOCOL_VER:
                 # Known layout: never guess a weight from bytes that belong to
                 # other fields when the decoded one is implausible.
-                if not _decode_weight_packet(framed_payload, cmd, parsed):
+                if not _decode_weight_packet(framed_payload, cmd, parsed, kg_division):
                     _mark_control_packet(framed_payload, parsed)
                 return parsed
             # Other firmware variants (byte 1 != 0x07) keep the legacy probing.
@@ -353,81 +355,57 @@ def _to_int(value: Any) -> int | None:
         return None
 
 
-def build_user_info_packet(
-    user_index: int,
+def build_user_info_frames(
+    *,
     sex: str,
     age: int,
     height_cm: int,
-    *,
-    seq: int = 1,
+    pkg_index: int,
+    timestamp: int,
+    utc_offset_seconds: int = 0,
+    user_index: int = 1,
+    weight_kg: float = 0.0,
     target_weight_kg: float = 0.0,
-    body_type: int = 0,
-    unit: int = 0,
-) -> bytes:
-    """Build a 20-byte 0xB1 user info packet.
+    function_flags: int = 0x01,
+    lang: int = 0,
+) -> list[bytes]:
+    """Build the B1 user-info message (one frame).
 
-    Layout matches the [seq, 0x07, 0x00, cmd] header observed on the A2/A3
-    notify side, followed by a 15-byte payload and XOR checksum.
-
-    Payload layout (offsets from packet[4]):
-        +0..+1: user_id big-endian
-        +2:    sex (1 = male, 0 = female)
-        +3:    age (years)
-        +4:    height cm
-        +5:    body_type (0 = ordinary, 1 = athlete)
-        +6..+7: target weight in 0.01 kg, big-endian
-        +8:    unit (0 = kg, 1 = lb, 2 = st)
+    Payload: time(4, unix s) utc_offset(2, minutes, bit15 = negative)
+    user_index height weight*100(2) age|male<<7 function_flags
+    target_weight*100(2) lang. ``function_flags`` bit0 enables impedance.
     """
+    offset_minutes = abs(utc_offset_seconds) // 60
+    if utc_offset_seconds < 0:
+        offset_minutes |= 0x8000
+    is_male = str(sex).lower() in ("male", "m", "1")
+    age_byte = (max(0, min(120, int(age))) & 0x7F) | (0x80 if is_male else 0)
+    payload = (
+        (int(timestamp) & 0xFFFFFFFF).to_bytes(4, "big")
+        + (offset_minutes & 0xFFFF).to_bytes(2, "big")
+        + bytes([user_index & 0xFF, max(0, min(250, int(height_cm)))])
+        + (max(0, int(weight_kg * 100)) & 0xFFFF).to_bytes(2, "big")
+        + bytes([age_byte, function_flags & 0xFF])
+        + (max(0, int(target_weight_kg * 100)) & 0xFFFF).to_bytes(2, "big")
+        + bytes([lang & 0xFF])
+    )
+    return build_frames(CMD_USER_INFO, payload, pkg_index=pkg_index)
 
-    payload = bytearray(15)
-    user_id = max(1, user_index) & 0xFFFF
-    payload[0] = (user_id >> 8) & 0xFF
-    payload[1] = user_id & 0xFF
-    payload[2] = 1 if str(sex).lower() in ("male", "m", "1") else 0
-    payload[3] = max(0, min(120, int(age))) & 0xFF
-    payload[4] = max(0, min(250, int(height_cm))) & 0xFF
-    payload[5] = body_type & 0xFF
-    target_units = max(0, int(round(target_weight_kg * 100)))
-    payload[6] = (target_units >> 8) & 0xFF
-    payload[7] = target_units & 0xFF
-    payload[8] = unit & 0xFF
-    return build_packet(seq=seq, command=CMD_USER_INFO, payload=bytes(payload))
 
+def build_reply_frames(
+    *, pkg_index: int, reply_index: int, state: int = 0
+) -> list[bytes]:
+    """Build the B0 ack for a received message.
 
-def build_start_measure_packet(*, seq: int = 1) -> bytes:
-    """Build the FFA0 control packet that arms the active measurement.
-
-    The scale needs an explicit FFA0 0x01 control to begin an active body
-    composition measurement after the user info exchange. FFA0 0x00 is the
-    matching stop command.
+    ``reply_index`` is byte 0 (package index) of the message being answered;
+    ``state`` 0 means success.
     """
-    payload = bytes([0x01])
-    return build_packet(seq=seq, command=CMD_START_MEASURE & 0xFF, payload=payload)
-
-
-def build_stop_measure_packet(*, seq: int = 1) -> bytes:
-    """Build the FFA0 0x00 control packet that ends the active measurement."""
-    return build_packet(
-        seq=seq, command=CMD_START_MEASURE & 0xFF, payload=bytes([0x00])
+    return build_frames(
+        CMD_REPLY_ACK,
+        bytes([reply_index & 0xFF, state & 0xFF]),
+        pkg_index=pkg_index,
     )
 
-
-def build_reply_ack_packet(
-    *, seq: int, echo_index: int = 0, payload_bytes: bytes = b""
-) -> bytes:
-    """Build a 0xB0 reply that acknowledges a scale-initiated A0 packet.
-
-    The scale's A0 carries a sub-index in payload[0]; the B0 reply echoes that
-    sub-index so the firmware knows which request we are answering. Optional
-    payload_bytes are placed right after the echoed index for cases where the
-    firmware also wants a small response body (e.g. setting confirmation).
-    """
-    payload = bytearray(15)
-    payload[0] = echo_index & 0xFF
-    if payload_bytes:
-        room = len(payload) - 1
-        payload[1 : 1 + min(room, len(payload_bytes))] = payload_bytes[:room]
-    return build_packet(seq=seq, command=CMD_REPLY_ACK, payload=bytes(payload))
 
 
 # Weight word shared by A2/A3/A5/A7 packets (big-endian 32-bit):
@@ -442,14 +420,14 @@ def _f32(value: float) -> float:
     return struct.unpack("f", struct.pack("f", value))[0]
 
 
-def _word_to_kg(word: int) -> float:
+def _word_to_kg(word: int, division: int = 0) -> float:
     """Convert a packed weight word to kg using the scale's rounding rules.
 
-    Code 0 is used when the device reports no rounding code; the scale may also
-    advertise a division through its device-info packet, which is not read here.
+    The rounding code in the word wins; when it is 0 the division reported by
+    the device-info message (``division``) applies.
     """
     grams = float(word & _WEIGHT_MASK)
-    code = (word >> 18) & 0x7
+    code = ((word >> 18) & 0x7) or (division & 0x7)
     kg = _f32(grams / 1000.0)
     if code > 4:
         return kg
@@ -485,7 +463,7 @@ def _plausible_impedance(raw: int) -> int | None:
 
 
 def _decode_weight_packet(
-    framed_payload: bytes, cmd: int, parsed: AtfleeMeasurement
+    framed_payload: bytes, cmd: int, parsed: AtfleeMeasurement, kg_division: int = 0
 ) -> bool:
     """Decode A2 (unstable) / A3 (stable) weight packets.
 
@@ -499,7 +477,7 @@ def _decode_weight_packet(
     if len(framed_payload) < word_at + 4:
         return False
     word = int.from_bytes(framed_payload[word_at : word_at + 4], "big")
-    weight_kg = _word_to_kg(word)
+    weight_kg = _word_to_kg(word, kg_division)
     if not 10.0 <= weight_kg <= 300.0:
         return False
 
@@ -525,7 +503,9 @@ def _decode_weight_packet(
     return True
 
 
-def _decode_upload_packet(framed_payload: bytes, parsed: AtfleeMeasurement) -> bool:
+def _decode_upload_packet(
+    framed_payload: bytes, parsed: AtfleeMeasurement, kg_division: int = 0
+) -> bool:
     """Decode the first frame of an A5/A7 measurement upload.
 
     Layout: [4..7] unix time, [8..11] weight word, [12] heart rate,
@@ -535,7 +515,7 @@ def _decode_upload_packet(framed_payload: bytes, parsed: AtfleeMeasurement) -> b
     if len(framed_payload) < 14:
         return False
     word = int.from_bytes(framed_payload[8:12], "big")
-    weight_kg = _word_to_kg(word)
+    weight_kg = _word_to_kg(word, kg_division)
     if not 10.0 <= weight_kg <= 300.0:
         return False
 
@@ -557,6 +537,107 @@ def _decode_upload_packet(framed_payload: bytes, parsed: AtfleeMeasurement) -> b
     parsed.is_stable = True
     parsed.is_body_composition_complete = True
     return True
+
+
+def parse_device_info(data: bytes) -> AtfleeDeviceInfo | None:
+    """Decode the A1 device-info message body (bytes after the command)."""
+    if len(data) < 9:
+        return None
+    word = int.from_bytes(data[0:4], "big")
+    eight_electrode = bool(word >> 24 & 1)
+    carry = word >> 29 & 1
+    return AtfleeDeviceInfo(
+        kg_division=word & 0x7,
+        support_hr=bool(word >> 6 & 1),
+        support_gravity=bool(word >> 7 & 1),
+        support_balance=bool(word >> 8 & 1),
+        eight_electrode=eight_electrode,
+        freq_count=word >> 25 & 0x7,
+        impedance_scaled=bool(word >> 28 & 1),
+        impedance_count=(6 - carry) if eight_electrode else (carry + 1),
+        function_flags=data[6],
+        algorithm_type=data[5],
+        protocol_ver=data[8],
+    )
+
+
+def _read_impedances(
+    data: bytes, offset: int, count: int, scaled: bool
+) -> tuple[float, ...]:
+    values: list[float] = []
+    for idx in range(count):
+        start = offset + 2 * idx
+        if start + 2 > len(data):
+            break
+        raw = int.from_bytes(data[start : start + 2], "big")
+        values.append(raw / 10.0 if scaled else float(raw))
+    return tuple(values)
+
+
+def _apply_impedances(parsed: AtfleeMeasurement, values: tuple[float, ...]) -> None:
+    parsed.impedances_ohm = values if any(values) else None
+    if values and 0.0 < values[0] <= 3000.0:
+        parsed.impedance_ohm = int(round(values[0]))
+
+
+def parse_message(
+    message: AtfleeMessage, device_info: AtfleeDeviceInfo | None
+) -> AtfleeMeasurement | None:
+    """Decode a validated A3/A4/A5/A7 message; None for other commands.
+
+    A3:     weight word(4) hr(1) impedance shorts
+    A5/A7:  time(4) weight word(4) hr(1) impedance count(1) impedance shorts
+            user id(4) body-fat flag(1) [body fat * 10 (2)]
+    A4:     history record, only acknowledged.
+    """
+    cmd = message.command
+    data = message.data
+    division = device_info.kg_division if device_info else 0
+    parsed = AtfleeMeasurement(raw_hex=(bytes([cmd]) + data).hex())
+    parsed.packet_command = cmd
+    parsed.packet_sequence = message.pkg_index
+    parsed.extended_payload_hex = data.hex()
+    scaled = bool(device_info and device_info.impedance_scaled)
+
+    if cmd in (CMD_HISTORY, CMD_DEVICE_INFO):
+        return parsed
+    if cmd == CMD_WEIGHT_STABLE:
+        if len(data) < 5:
+            return parsed
+        weight_kg = _word_to_kg(int.from_bytes(data[0:4], "big"), division)
+        if not 10.0 <= weight_kg <= 300.0:
+            return parsed
+        parsed.weight_kg = round(weight_kg, 2)
+        if data[4]:
+            parsed.heart_rate = data[4]
+        channels = (
+            device_info.impedance_channels if device_info else (len(data) - 5) // 2
+        )
+        _apply_impedances(parsed, _read_impedances(data, 5, channels, scaled))
+        parsed.measure_state = "weight"
+        parsed.is_stable = True
+        return parsed
+    if cmd in (CMD_UPLOAD_RESULT, CMD_UPLOAD_RESULT_EX):
+        if len(data) < 10:
+            return parsed
+        weight_kg = _word_to_kg(int.from_bytes(data[4:8], "big"), division)
+        if not 10.0 <= weight_kg <= 300.0:
+            return parsed
+        parsed.weight_kg = round(weight_kg, 2)
+        if data[8]:
+            parsed.heart_rate = data[8]
+        count = data[9]
+        _apply_impedances(parsed, _read_impedances(data, 10, count, scaled))
+        pos = 10 + 2 * count
+        if len(data) >= pos + 7 and data[pos + 4]:
+            body_fat = int.from_bytes(data[pos + 5 : pos + 7], "big") / 10.0
+            if 2.0 <= body_fat <= 80.0:
+                parsed.body_fat_pct = body_fat
+        parsed.measure_state = "body_composition"
+        parsed.is_stable = True
+        parsed.is_body_composition_complete = True
+        return parsed
+    return None
 
 
 def _mark_control_packet(framed_payload: bytes, parsed: AtfleeMeasurement) -> None:

@@ -15,8 +15,29 @@ from homeassistant.components.bluetooth import (
 from homeassistant.core import HomeAssistant
 
 from ..const import DEBUG_READ_UUIDS, OPTIONAL_NOTIFY_UUIDS
-from .models import AtfleeMeasurement
-from .protocol import parse_measurement_packet
+from .models import AtfleeDeviceInfo, AtfleeMeasurement
+from .packet import (
+    CMD_DEVICE_INFO,
+    CMD_HISTORY,
+    CMD_UPLOAD_RESULT,
+    CMD_UPLOAD_RESULT_EX,
+    CMD_WEIGHT_STABLE,
+    AtfleeMessage,
+    FrameAssembler,
+)
+from .protocol import parse_device_info, parse_measurement_packet, parse_message
+
+# Messages decoded from fully reassembled frames; everything else keeps the
+# per-frame parser.
+_MESSAGE_COMMANDS = frozenset(
+    {
+        CMD_DEVICE_INFO,
+        CMD_WEIGHT_STABLE,
+        CMD_HISTORY,
+        CMD_UPLOAD_RESULT,
+        CMD_UPLOAD_RESULT_EX,
+    }
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,8 +62,11 @@ class AtfleeBleClient:
         self._notify_char_uuid: str | None = None
         self._write_char_uuid: str | None = None
         self._extra_notify_char_uuids: list[str] = []
-        self._packet_queue: Queue[bytes] = Queue(maxsize=30)
+        self._packet_queue: Queue[tuple[bytes, AtfleeMessage | None]] = Queue(maxsize=30)
         self._last_notify_packet: bytes | None = None
+        self._assemblers: dict[str, FrameAssembler] = {}
+        self._out_pkg_index = 0
+        self.device_info: AtfleeDeviceInfo | None = None
 
     async def _debug_dump_gatt_map(self, client: BleakClientWithServiceCache) -> None:
         """Dump full service/characteristic map for diagnostic purposes."""
@@ -129,13 +153,26 @@ class AtfleeBleClient:
                     preview,
                 )
         self._last_notify_packet = packet
+        assembler = self._assemblers.setdefault(str(source).lower(), FrameAssembler())
+        message = assembler.feed(packet)
+        if (
+            message is None
+            and len(packet) == 20
+            and packet[1] > 16
+            and packet[2] == 0
+            and packet[3] in _MESSAGE_COMMANDS
+        ):
+            # First frame of a multi-frame message: wait for the rest.
+            return
+        if message is not None and message.command not in _MESSAGE_COMMANDS:
+            message = None
         if self._packet_queue.full():
             try:
                 self._packet_queue.get_nowait()
             except Exception:  # noqa: BLE001
                 pass
             _LOGGER.debug("Atflee packet queue full; dropped oldest packet")
-        self._packet_queue.put_nowait(packet)
+        self._packet_queue.put_nowait((packet, message))
         _LOGGER.debug("Atflee packet queued: queue_size=%d", self._packet_queue.qsize())
 
     async def connect_with_profiles(
@@ -148,6 +185,9 @@ class AtfleeBleClient:
         await self.disconnect()
         while not self._packet_queue.empty():
             self._packet_queue.get_nowait()
+        self._assemblers = {}
+        self._out_pkg_index = 0
+        self.device_info = None
 
         last_error: Exception | None = None
         for service_uuid, notify_char_uuid, write_char_uuid in profiles:
@@ -258,14 +298,37 @@ class AtfleeBleClient:
             timeout_seconds,
             self._packet_queue.qsize(),
         )
-        packet = await wait_for(self._packet_queue.get(), timeout=timeout_seconds)
+        packet, message = await wait_for(self._packet_queue.get(), timeout=timeout_seconds)
         _LOGGER.debug(
             "Atflee packet dequeued: len=%d hex=%s queue_size_after=%d",
             len(packet),
             packet.hex(),
             self._packet_queue.qsize(),
         )
-        return parse_measurement_packet(packet)
+        if message is not None:
+            if message.command == CMD_DEVICE_INFO:
+                info = parse_device_info(message.data)
+                if info is not None:
+                    self.device_info = info
+            parsed = parse_message(message, self.device_info)
+            if parsed is not None:
+                return parsed
+        return parse_measurement_packet(
+            packet, self.device_info.kg_division if self.device_info else 0
+        )
+
+    def next_pkg_index(self) -> int:
+        """Return the next outbound package index (0..255, wrapping)."""
+        value = self._out_pkg_index
+        self._out_pkg_index = (value + 1) % 256
+        return value
+
+    async def send_frames(self, frames: list[bytes]) -> bool:
+        """Write every frame of one message to the scale, in order."""
+        for frame in frames:
+            if not await self.send_user_info(frame):
+                return False
+        return True
 
     async def send_user_info(self, packet: bytes) -> bool:
         """Send a constructed user info packet to trigger active measurement."""

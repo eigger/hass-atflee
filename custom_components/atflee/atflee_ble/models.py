@@ -19,6 +19,7 @@ class AtfleeMeasurement:
     body_fat_pct: float | None = None
     bmi: float | None = None
     impedance_ohm: int | None = None
+    impedances_ohm: tuple[float, ...] | None = None  # every channel in packet order
 
     # --- 확장 체성분 ---
     subcutaneous_fat_pct: float | None = None   # 피하지방률 (subcutaneousFat)
@@ -84,6 +85,28 @@ class AtfleeMeasurement:
         ):
             if pct_field in fresh:
                 setattr(self, field, mass(getattr(self, pct_field)))
+
+
+@dataclass(slots=True)
+class AtfleeDeviceInfo:
+    """Capabilities reported by the scale in its device-info (A1) message."""
+
+    kg_division: int = 0
+    support_hr: bool = False
+    support_gravity: bool = False
+    support_balance: bool = False
+    eight_electrode: bool = False
+    freq_count: int = 0
+    impedance_scaled: bool = False  # impedance shorts carry ohm * 10
+    impedance_count: int = 1
+    function_flags: int = 0  # bit0 impedance, bit1 balance, bit2 hr, bit3 gravity
+    algorithm_type: int = 0
+    protocol_ver: int = 0
+
+    @property
+    def impedance_channels(self) -> int:
+        """Number of impedance shorts in a stable-weight message."""
+        return (self.freq_count + 1) * self.impedance_count
 
 
 @dataclass(slots=True)

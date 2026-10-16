@@ -409,11 +409,10 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                 #   2) B1       — push user info so the scale can pick algorithm
                 # The scale then sends A2/A3 weight notifies followed by A5/A7
                 # with body composition results.
-                from .atflee_ble.packet import CMD_REPLY_PACKAGE
+                from .atflee_ble.packet import ACKED_COMMANDS
                 from .atflee_ble.protocol import (
-                    build_reply_ack_packet,
-                    build_start_measure_packet,
-                    build_user_info_packet,
+                    build_reply_frames,
+                    build_user_info_frames,
                 )
                 from .const import (
                     CONF_BIRTH_YEAR,
@@ -433,16 +432,6 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     )
                 )
 
-                # Outbound sequence counter shared across all writes in this
-                # session. Wraps 1..255 (the firmware treats 0 as invalid).
-                out_seq = 1
-
-                def next_seq() -> int:
-                    nonlocal out_seq
-                    value = out_seq
-                    out_seq = (out_seq % 255) + 1
-                    return value
-
                 if send_enabled:
                     birth_year = int(
                         self.entry.options.get(
@@ -450,29 +439,23 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                             self.entry.data.get(CONF_BIRTH_YEAR, DEFAULT_BIRTH_YEAR),
                         )
                     )
-                    current_year = datetime.now().year
-                    age = max(1, current_year - birth_year)
+                    now_local = datetime.now().astimezone()
+                    age = max(1, now_local.year - birth_year)
                     sex = str(
                         self.entry.options.get(
                             CONF_SEX, self.entry.data.get(CONF_SEX, DEFAULT_SEX)
                         )
                     )
-                    height_cm = self._current_height_cm()
-
-                    start_packet = build_start_measure_packet(seq=next_seq())
-                    if not await self.client.send_user_info(start_packet):
-                        _LOGGER.debug(
-                            "Atflee FFA0 start command failed; continuing with B1"
-                        )
-
-                    user_info_packet = build_user_info_packet(
-                        user_index=1,
+                    utc_offset = now_local.utcoffset()
+                    user_info_frames = build_user_info_frames(
                         sex=sex,
                         age=age,
-                        height_cm=height_cm,
-                        seq=next_seq(),
+                        height_cm=self._current_height_cm(),
+                        pkg_index=self.client.next_pkg_index(),
+                        timestamp=int(now_local.timestamp()),
+                        utc_offset_seconds=int(utc_offset.total_seconds()) if utc_offset else 0,
                     )
-                    await self.client.send_user_info(user_info_packet)
+                    await self.client.send_frames(user_info_frames)
                 else:
                     _LOGGER.debug("Atflee body composition measurement skipped (disabled)")
 
@@ -501,19 +484,26 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         measurement.raw_hex,
                     )
 
-                    # A0 reply_package: the scale is asking us to confirm
-                    # before it advances to the body composition stage. Echo
-                    # the sub-index in a B0 ack and continue listening.
-                    if measurement.packet_command == CMD_REPLY_PACKAGE:
-                        ack_packet = build_reply_ack_packet(
-                            seq=next_seq(),
-                            echo_index=measurement.packet_sub_index or 0,
+                    # The scale retransmits device info, stable weight and
+                    # upload messages until they are answered with a B0 ack
+                    # that echoes the message's package index.
+                    if (
+                        measurement.packet_command in ACKED_COMMANDS
+                        and measurement.packet_sequence is not None
+                    ):
+                        await self.client.send_frames(
+                            build_reply_frames(
+                                pkg_index=self.client.next_pkg_index(),
+                                reply_index=measurement.packet_sequence,
+                            )
                         )
-                        await self.client.send_user_info(ack_packet)
                         _LOGGER.debug(
-                            "Atflee A0 ack sent: sub_index=%s",
-                            measurement.packet_sub_index,
+                            "Atflee ack sent: cmd=0x%02X reply_index=%s",
+                            measurement.packet_command,
+                            measurement.packet_sequence,
                         )
+
+                    if measurement.measure_state == "handshake":
                         continue
 
                     # Ignore control/heartbeat packets that do not carry any mapped value.
