@@ -1,0 +1,103 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Atflee scale setup",
+        "description": "Select a discovered scale. Connection starts when advertisement is received.",
+        "data": {
+          "address": "Bluetooth address",
+          "height_cm": "User height (cm)",
+          "birth_year": "Birth year",
+          "sex": "Sex (male/female)",
+          "notify_timeout_seconds": "Idle disconnect timeout (seconds)",
+          "enable_body_composition": "Enable body composition measurement"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Atflee scale found",
+        "description": "Configure measurement session options for {name}.",
+        "data": {
+          "height_cm": "User height (cm)",
+          "birth_year": "Birth year",
+          "sex": "Sex (male/female)",
+          "notify_timeout_seconds": "Idle disconnect timeout (seconds)",
+          "enable_body_composition": "Enable body composition measurement"
+        }
+      }
+    },
+    "abort": {
+      "no_devices_found": "No Bluetooth devices found."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Atflee options",
+        "data": {
+          "height_cm": "User height (cm)",
+          "birth_year": "Birth year",
+          "sex": "Sex (male/female)",
+          "notify_timeout_seconds": "Idle disconnect timeout (seconds)",
+          "enable_body_composition": "Enable body composition measurement"
+        }
+      }
+    }
+  },
+  "selector": {
+    "sex": {
+      "options": {
+        "male": "Male",
+        "female": "Female"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "weight": { "name": "Weight" },
+      "body_fat": { "name": "Body Fat" },
+      "bmi": { "name": "BMI" },
+      "impedance": { "name": "Impedance" },
+      "subcutaneous_fat": { "name": "Subcutaneous Fat" },
+      "visceral_fat": { "name": "Visceral Fat" },
+      "muscle_pct": { "name": "Muscle" },
+      "muscle_mass": { "name": "Muscle Mass" },
+      "bmr": { "name": "BMR" },
+      "bone_mass": { "name": "Bone Mass" },
+      "moisture_pct": { "name": "Body Water" },
+      "protein_pct": { "name": "Protein" },
+      "skeletal_muscle_pct": { "name": "Skeletal Muscle" },
+      "body_fat_mass": { "name": "Body Fat Mass" },
+      "fat_free_mass": { "name": "Fat-Free Mass" },
+      "body_water_mass": { "name": "Body Water Mass" },
+      "protein_mass": { "name": "Protein Mass" },
+      "skeletal_muscle_mass": { "name": "Skeletal Muscle Mass" },
+      "physical_age": { "name": "Body Age" },
+      "body_score": { "name": "Body Score" },
+      "battery": { "name": "Battery" },
+      "heart_rate": { "name": "Heart Rate" },
+      "verify_status": { "name": "Verify Status" },
+      "measure_status": { "name": "Measure Status" },
+      "scale_status": { "name": "Scale Status" },
+      "connection_duration": { "name": "Connection Duration" }
+    },
+    "binary_sensor": {
+      "ble_connection": { "name": "Connection" }
+    },
+    "number": {
+      "height_cm": { "name": "User height" },
+      "birth_year": { "name": "User birth year" }
+    },
+    "select": {
+      "sex": {
+        "name": "User sex",
+        "state": {
+          "male": "Male",
+          "female": "Female"
+        }
+      }
+    },
+    "switch": {
+      "enable_body_comp": { "name": "Body composition measurement" }
+    }
+  }
+}
