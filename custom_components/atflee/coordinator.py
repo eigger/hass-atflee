@@ -284,7 +284,13 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         """Preserve last known sensor values when control packets omit them."""
         prev = self.data if isinstance(self.data, AtfleeState) else None
         prev_measurement = prev.measurement if prev else None
+        fresh = frozenset(
+            name
+            for name in ("body_fat_pct", "moisture_pct", "protein_pct", "skeletal_muscle_pct")
+            if getattr(measurement, name) is not None
+        )
         if prev_measurement is None:
+            measurement.compute_masses(fresh)
             return measurement
 
         # 기본 체중/체성분
@@ -325,6 +331,17 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             measurement.physical_age = prev_measurement.physical_age
         if measurement.body_score is None:
             measurement.body_score = prev_measurement.body_score
+        # 계산된 질량: 이전 값은 유지하고, 이번 패킷의 퍼센트로만 갱신
+        for name in (
+            "body_fat_mass",
+            "fat_free_mass",
+            "body_water_mass",
+            "protein_mass",
+            "skeletal_muscle_mass",
+        ):
+            if getattr(measurement, name) is None:
+                setattr(measurement, name, getattr(prev_measurement, name))
+        measurement.compute_masses(fresh)
 
         return measurement
 

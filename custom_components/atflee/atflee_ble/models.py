@@ -52,39 +52,42 @@ class AtfleeMeasurement:
     is_body_composition_complete: bool = False
     raw_hex: str | None = None
 
-    # --- 파생 체성분 (퍼센트 x 체중; 앳플리 앱 2.3.2의 targetBodyfatMass 공식과 동일) ---
-    def _mass_from_pct(self, pct: float | None) -> float | None:
-        if self.weight_kg is None or pct is None:
-            return None
-        return round(self.weight_kg * pct / 100.0, 2)
+    # --- 계산된 체성분 (같은 측정의 체중 x 퍼센트로 계산해 저장) ---
+    body_fat_mass: float | None = None          # 체지방량 kg
+    fat_free_mass: float | None = None          # 제지방량 kg
+    body_water_mass: float | None = None        # 체수분량 kg
+    protein_mass: float | None = None           # 단백질량 kg
+    skeletal_muscle_mass: float | None = None   # 골격근량 kg
 
-    @property
-    def body_fat_mass(self) -> float | None:
-        """체지방량 kg."""
-        return self._mass_from_pct(self.body_fat_pct)
+    def compute_masses(self, fresh: frozenset[str]) -> None:
+        """Compute kg values from percentages that arrived with this packet.
 
-    @property
-    def fat_free_mass(self) -> float | None:
-        """제지방량(LBM) kg = 체중 - 체지방량."""
-        fat = self.body_fat_mass
-        if fat is None or self.weight_kg is None:
-            return None
-        return round(self.weight_kg - fat, 2)
+        ``fresh`` names the percentage fields set by the current packet, so a
+        mass is never built from a percentage carried over from an earlier
+        measurement. Existing mass values are left untouched otherwise.
+        """
+        weight = self.weight_kg
 
-    @property
-    def body_water_mass(self) -> float | None:
-        """체수분량 kg."""
-        return self._mass_from_pct(self.moisture_pct)
+        def mass(pct: float | None) -> float | None:
+            if weight is None or pct is None or not 0.0 <= pct <= 100.0:
+                return None
+            return round(weight * pct / 100.0, 2)
 
-    @property
-    def protein_mass(self) -> float | None:
-        """단백질량 kg."""
-        return self._mass_from_pct(self.protein_pct)
+        if "body_fat_pct" in fresh:
+            fat = mass(self.body_fat_pct)
+            if fat is not None and weight is not None:
+                self.body_fat_mass = fat
+                self.fat_free_mass = round(weight - fat, 2)
+        for field, pct_field in (
+            ("body_water_mass", "moisture_pct"),
+            ("protein_mass", "protein_pct"),
+            ("skeletal_muscle_mass", "skeletal_muscle_pct"),
+        ):
+            if pct_field in fresh:
+                value = mass(getattr(self, pct_field))
+                if value is not None:
+                    setattr(self, field, value)
 
-    @property
-    def skeletal_muscle_mass(self) -> float | None:
-        """골격근량 kg."""
-        return self._mass_from_pct(self.skeletal_muscle_pct)
 
 
 @dataclass(slots=True)
