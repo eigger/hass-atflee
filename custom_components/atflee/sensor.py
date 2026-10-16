@@ -350,10 +350,22 @@ class AtfleeSensorEntity(
         return self._restored_native_value
 
     @property
-    def extra_state_attributes(self) -> dict[str, str | int | bool | None]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Attach raw packet and body composition fields for diagnostic purposes."""
         state = self.coordinator.data
         m = state.measurement
+        attrs = self._packet_attributes(state, m)
+        if self.entity_description.key == "connection_duration":
+            # The last session's breakdown (stages, radio, likely cause); not
+            # while a session runs, so it is never shown against its time.
+            if not self.coordinator.session_report_pending:
+                report = self.coordinator.session_reports.last
+                if report:
+                    attrs = {**attrs, **report}
+        return attrs
+
+    @staticmethod
+    def _packet_attributes(state: AtfleeState, m: Any) -> dict[str, Any]:
         return {
             # 패킷 진단
             "last_packet_hex": state.last_packet_hex,
