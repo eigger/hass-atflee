@@ -21,16 +21,16 @@ from .const import (
     MIN_BIRTH_YEAR,
     MAX_BIRTH_YEAR,
 )
-from .coordinator import AtfleeDataUpdateCoordinator
+from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: AtfleeConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Atflee number entities."""
-    coordinator: AtfleeDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     async_add_entities([
         AtfleeHeightNumberEntity(coordinator, entry),
         AtfleeBirthYearNumberEntity(coordinator, entry),

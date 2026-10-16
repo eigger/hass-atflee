@@ -22,7 +22,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import AtfleeDataUpdateCoordinator
+from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
 from .atflee_ble.models import AtfleeState
 
 
@@ -267,11 +267,11 @@ _INT_KEYS = {
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: AtfleeConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Atflee sensor entities."""
-    coordinator: AtfleeDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     async_add_entities(
         [
             *(AtfleeSensorEntity(coordinator, entry, d) for d in SENSORS),

@@ -4,40 +4,35 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import DOMAIN
-from .coordinator import AtfleeDataUpdateCoordinator
+from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.NUMBER, Platform.SELECT, Platform.SWITCH]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bool:
     """Set up Atflee from a config entry."""
     coordinator = AtfleeDataUpdateCoordinator(hass, entry)
     await coordinator.async_start()
+    # Registered right after start so the BLE callbacks are released on every
+    # exit path, including a failed first refresh (ConfigEntryNotReady retries).
+    entry.async_on_unload(coordinator.async_stop)
     await coordinator.async_config_entry_first_refresh()
     if coordinator.last_update_success is False:
         raise ConfigEntryNotReady("Initial BLE update failed")
 
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _LOGGER.debug("Atflee entry setup complete: %s", entry.entry_id)
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bool:
     """Unload an Atflee config entry."""
-    coordinator: AtfleeDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
-    await coordinator.async_stop()
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
-    return unload_ok
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

@@ -15,16 +15,16 @@ from .const import (
     DEFAULT_SEX,
     DOMAIN,
 )
-from .coordinator import AtfleeDataUpdateCoordinator
+from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: AtfleeConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Atflee select entities."""
-    coordinator: AtfleeDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     async_add_entities([AtfleeSexSelectEntity(coordinator, entry)])
 
 

@@ -17,16 +17,16 @@ from .const import (
     DEFAULT_ENABLE_BODY_COMP,
     DOMAIN,
 )
-from .coordinator import AtfleeDataUpdateCoordinator
+from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: AtfleeConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Atflee switch entities."""
-    coordinator: AtfleeDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     async_add_entities([AtfleeBodyCompSwitch(coordinator, entry)])
 
 
