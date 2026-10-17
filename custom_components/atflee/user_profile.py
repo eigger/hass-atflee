@@ -131,13 +131,28 @@ def profile_from_data(data: Mapping[str, Any]) -> UserProfile | None:
     return UserProfile(height_cm=height, birth_date=birth, sex=sex)
 
 
+def _slot(item: Mapping[str, Any]) -> int:
+    try:
+        return int(item.get(CONF_SLOT, 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def primary_user_data(users: Iterable[Mapping[str, Any]]) -> Mapping[str, Any] | None:
     """Return the data of the user in the lowest slot, or None without users."""
+    return min(users, key=_slot, default=None)
 
-    def slot(item: Mapping[str, Any]) -> int:
-        try:
-            return int(item.get(CONF_SLOT, 0))
-        except (TypeError, ValueError):
-            return 0
 
-    return min(users, key=slot, default=None)
+def primary_user_id(users: Mapping[str, Mapping[str, Any]]) -> str | None:
+    """Return the subentry id of the user in the lowest slot, or None without users."""
+    return min(users, key=lambda sid: (_slot(users[sid]), sid), default=None)
+
+
+def user_unique_id(address: str, subentry_id: str, key: str) -> str:
+    """Unique id of a per-user entity."""
+    return f"{address}_{subentry_id}_{key}"
+
+
+def user_device_identifier(address: str, subentry_id: str) -> str:
+    """Device identifier value of a user device (the domain is added by the caller)."""
+    return f"{address}_{subentry_id}"
