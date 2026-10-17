@@ -34,7 +34,9 @@
       }
     },
     "abort": {
-      "no_devices_found": "No Bluetooth devices found."
+      "no_devices_found": "No Bluetooth devices found.",
+      "already_configured": "This scale is already configured.",
+      "already_in_progress": "Setup for this scale is already in progress."
     },
     "error": {
       "name_required": "Enter a name.",
@@ -60,8 +62,8 @@
         },
         "data_description": {
           "default_user": "Used when no user is selected. Empty uses the first user.",
-          "match_tolerance_kg": "In auto mode a user is picked when the weight is this close to their last weight. Needs at least two users.",
-          "fallback_max_delta_kg": "If nobody matches and the weight differs from the default user's last weight by more than this, the measurement is not recorded and an atflee_unassigned_measurement event is fired."
+          "match_tolerance_kg": "In auto mode a user is picked when the weight is this close to their last stable weight (or expected weight if none is stored). Needs at least two users.",
+          "fallback_max_delta_kg": "If nobody matches and the weight differs from the default user's last stable weight (or expected weight if none is stored) by more than this, the measurement is not recorded and an atflee_unassigned_measurement event is fired."
         }
       }
     }

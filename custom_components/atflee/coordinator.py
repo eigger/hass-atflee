@@ -20,14 +20,18 @@ from homeassistant.util import dt as dt_util
 
 from .atflee_ble.bodycomp import IMPEDANCE_CHANNELS, calculate_body_composition
 from .atflee_ble.connection import AtfleeBleClient
+from .atflee_ble.packet import ACKED_COMMANDS
 from .atflee_ble.profile import age_from_birth_date
+from .atflee_ble.protocol import build_reply_frames, build_user_info_frames
 from .const import (
     ASSIGNMENT_UNASSIGNED,
     CONF_DEFAULT_USER,
+    CONF_ENABLE_BODY_COMP,
     CONF_FALLBACK_MAX_DELTA_KG,
     CONF_MATCH_TOLERANCE_KG,
     CONF_NOTIFY_TIMEOUT_SECONDS,
     CONF_USER_NAME,
+    DEFAULT_ENABLE_BODY_COMP,
     DEFAULT_FALLBACK_MAX_DELTA_KG,
     DEFAULT_MATCH_TOLERANCE_KG,
     DOMAIN,
@@ -641,16 +645,6 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                 # Push the user profile (B1) on connect, with the impedance
                 # function enabled, so the scale measures impedance after the
                 # weight settles. Its A1/A3/A5/A7 messages are acked below.
-                from .atflee_ble.packet import ACKED_COMMANDS
-                from .atflee_ble.protocol import (
-                    build_reply_frames,
-                    build_user_info_frames,
-                )
-                from .const import (
-                    CONF_ENABLE_BODY_COMP,
-                    DEFAULT_ENABLE_BODY_COMP,
-                )
-
                 send_enabled = bool(
                     self.entry.options.get(
                         CONF_ENABLE_BODY_COMP,

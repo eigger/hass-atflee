@@ -446,8 +446,8 @@ class AtfleeUserSensorEntity(_AtfleeRestoreSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Attach raw packet and body composition fields for diagnostic purposes."""
-        return _packet_attributes(self.coordinator.data, self._measurement)
+        """Attach this user's own packet fields (not the scale-wide ones)."""
+        return _measurement_attributes(self._measurement)
 
 
 class AtfleeScaleSensorEntity(_AtfleeRestoreSensor):
@@ -483,16 +483,9 @@ class AtfleeScaleSensorEntity(_AtfleeRestoreSensor):
         return attrs
 
 
-def _packet_attributes(state: AtfleeState, m: AtfleeMeasurement | None) -> dict[str, Any]:
+def _measurement_attributes(m: AtfleeMeasurement | None) -> dict[str, Any]:
+    """Fields of one measurement; the only attributes a user's sensors carry."""
     return {
-        # 패킷 진단
-        "last_packet_hex": state.last_packet_hex,
-        "ble_connected": state.connected,
-        "connection_started_at": (
-            state.connection_started_at.isoformat() if state.connection_started_at else None
-        ),
-        "connection_duration_seconds": state.connection_duration_seconds,
-        "measuring": state.measuring,
         "measure_state": m.measure_state if m else None,
         "stable": m.is_stable if m else None,
         "body_composition_complete": m.is_body_composition_complete if m else None,
@@ -507,6 +500,21 @@ def _packet_attributes(state: AtfleeState, m: AtfleeMeasurement | None) -> dict[
         "packet_sequence": m.packet_sequence if m else None,
         "packet_tail": m.packet_tail if m else None,
         "extended_payload_hex": m.extended_payload_hex if m else None,
+    }
+
+
+def _packet_attributes(state: AtfleeState, m: AtfleeMeasurement | None) -> dict[str, Any]:
+    """Scale sensors: the latest packet's fields plus the scale-wide diagnostics."""
+    return {
+        # 패킷 진단
+        "last_packet_hex": state.last_packet_hex,
+        "ble_connected": state.connected,
+        "connection_started_at": (
+            state.connection_started_at.isoformat() if state.connection_started_at else None
+        ),
+        "connection_duration_seconds": state.connection_duration_seconds,
+        "measuring": state.measuring,
+        **_measurement_attributes(m),
         "updated_at": state.updated_at.isoformat() if state.updated_at else None,
     }
 
