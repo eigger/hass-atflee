@@ -7,12 +7,14 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
 from time import monotonic
+from typing import Any
 
 from blesession import SessionReports, fallback_report, stages
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -20,9 +22,13 @@ from homeassistant.util import dt as dt_util
 
 from .atflee_ble.bodycomp import IMPEDANCE_CHANNELS, calculate_body_composition
 from .atflee_ble.connection import AtfleeBleClient
-from .atflee_ble.packet import ACKED_COMMANDS
+from .atflee_ble.packet import ACKED_COMMANDS, CMD_DEVICE_INFO
 from .atflee_ble.profile import age_from_birth_date
-from .atflee_ble.protocol import build_reply_frames, build_user_info_frames
+from .atflee_ble.protocol import (
+    build_reply_frames,
+    build_user_info_frames,
+    parse_device_info,
+)
 from .const import (
     ASSIGNMENT_UNASSIGNED,
     CONF_DEFAULT_USER,
@@ -42,7 +48,13 @@ from .const import (
     MATCH_MARGIN_KG,
     SUBENTRY_TYPE_USER,
 )
-from .atflee_ble.models import AtfleeMeasurement, AtfleeState, next_state
+from .atflee_ble.models import (
+    AtfleeDeviceInfo,
+    AtfleeHardwareInfo,
+    AtfleeMeasurement,
+    AtfleeState,
+    next_state,
+)
 from .session_report import ARM, MEASURE, SessionTrace, build_session_report
 from .user_profile import (
     ActiveUserSelection,
@@ -69,6 +81,11 @@ def last_weights_store_key(entry_id: str) -> str:
 # never be started again from adverts alone. The watchdog polls device presence
 # instead, which is unaffected by de-duplication.
 WATCHDOG_INTERVAL = timedelta(seconds=5)
+
+# Upper bound for reading the Device Information strings (background task) and
+# how many sessions may try before giving up for this config-entry load.
+HARDWARE_INFO_BUDGET_SECONDS = 5.0
+HARDWARE_INFO_MAX_ATTEMPTS = 3
 
 
 # PEP 695 alias: evaluated lazily, so the forward reference is fine.
@@ -132,8 +149,16 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         self._profile_sent_user_id: str | None = None
         # Last stable weight per user (subentry id), persisted for identification.
         self._last_weights: dict[str, float] = {}
-        self._weights_dirty = False
-        self._store: Store[dict[str, dict[str, float]]] = Store(
+        self._store_dirty = False
+        # Scale identity, persisted next to the weights so the device page and
+        # the Electrodes sensor are filled before the scale next wakes up.
+        # hardware_info: Device Information service strings (read once per run).
+        # scale_info: capabilities from the scale's device-info (A1) message.
+        self.hardware_info: AtfleeHardwareInfo | None = None
+        self.scale_info: AtfleeDeviceInfo | None = None
+        self._hardware_info_done = False
+        self._hardware_info_attempts = 0
+        self._store: Store[dict[str, Any]] = Store(
             hass, LAST_WEIGHTS_STORE_VERSION, last_weights_store_key(entry.entry_id)
         )
 
@@ -146,29 +171,94 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         )
 
     async def async_load_last_weights(self) -> None:
-        """Load the stored last weights, dropping users that no longer exist."""
+        """Load the stored last weights (dropping users that no longer exist)
+        and the stored scale identity."""
         stored = await self._store.async_load()
-        raw = stored.get("last_weights") if isinstance(stored, dict) else None
+        if not isinstance(stored, dict):
+            stored = {}
+        raw = stored.get("last_weights")
         self._last_weights = sanitize_last_weights(raw, self.user_subentries())
+        self.hardware_info = AtfleeHardwareInfo.from_dict(stored.get("hardware_info"))
+        self.scale_info = _scale_info_from_hex(stored.get("device_info_hex"))
         if isinstance(raw, dict) and len(raw) != len(self._last_weights):
             self._schedule_weights_save()
 
     async def async_flush_last_weights(self) -> None:
-        """Write pending weights now (also cancels a delayed save)."""
-        if self._weights_dirty:
-            self._weights_dirty = False
-            await self._store.async_save({"last_weights": dict(self._last_weights)})
+        """Write pending data now (also cancels a delayed save)."""
+        if self._store_dirty:
+            await self._store.async_save(self._store_data())
 
     def _schedule_weights_save(self) -> None:
-        self._weights_dirty = True
+        self._store_dirty = True
         self._store.async_delay_save(
-            self._delayed_weights,
+            self._store_data,
             LAST_WEIGHTS_SAVE_DELAY_SECONDS,
         )
 
-    def _delayed_weights(self) -> dict[str, dict[str, float]]:
-        self._weights_dirty = False
-        return {"last_weights": dict(self._last_weights)}
+    def _store_data(self) -> dict[str, Any]:
+        self._store_dirty = False
+        data: dict[str, Any] = {"last_weights": dict(self._last_weights)}
+        if self.hardware_info is not None:
+            data["hardware_info"] = self.hardware_info.as_dict()
+        if self.scale_info is not None and self.scale_info.raw_hex:
+            data["device_info_hex"] = self.scale_info.raw_hex
+        return data
+
+    async def _async_read_hardware_info(self) -> None:
+        """Read the Device Information strings; never raises.
+
+        Runs as a background task of the session. Done once per config-entry
+        load once a read produced a result (strings, or the service is simply
+        not exposed); a timeout, disconnect or BLE error allows a retry on a
+        later session, up to HARDWARE_INFO_MAX_ATTEMPTS.
+        """
+        if (
+            self._hardware_info_done
+            or self._hardware_info_attempts >= HARDWARE_INFO_MAX_ATTEMPTS
+        ):
+            return
+        self._hardware_info_attempts += 1
+        try:
+            info, definitive = await asyncio.wait_for(
+                self.client.read_hardware_info(), timeout=HARDWARE_INFO_BUDGET_SECONDS
+            )
+        except asyncio.CancelledError:
+            # A session that ends early must not use up one of the attempts.
+            self._hardware_info_attempts -= 1
+            raise
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Atflee device info read failed for %s: %s", self.address, err)
+            return
+        if info is None:
+            if definitive:
+                self._hardware_info_done = True
+            _LOGGER.debug("Atflee device info unavailable for %s", self.address)
+            return
+        self._hardware_info_done = definitive
+        _LOGGER.debug("Atflee device info for %s: %s", self.address, info.as_dict())
+        if not definitive and self.hardware_info is not None:
+            # A partial read must not drop strings stored by an earlier full read.
+            info = AtfleeHardwareInfo(
+                **{**self.hardware_info.as_dict(), **info.as_dict()}
+            )
+        if info == self.hardware_info:
+            return
+        self.hardware_info = info
+        self._schedule_weights_save()
+        self.async_update_listeners()
+        registry = dr.async_get(self.hass)
+        device = registry.async_get_device(identifiers={(DOMAIN, self.address)})
+        if device is not None:
+            registry.async_update_device(device.id, **info.registry_fields())
+
+    def _update_scale_info(self) -> None:
+        """Keep the capabilities from the device-info message just received."""
+        info = self.client.device_info
+        if info is None or info == self.scale_info:
+            return
+        self.scale_info = info
+        self._schedule_weights_save()
+        self.async_update_listeners()
 
     async def async_start(self) -> None:
         """Start advertisement-driven update flow."""
@@ -630,6 +720,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             trace = SessionTrace()
             packets = 0
             arm_started: float | None = None
+            info_task: asyncio.Task | None = None
             measure_started: float | None = None
             self.session_report_pending = True
             try:
@@ -691,6 +782,12 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                 arm_started = None
                 measure_started = monotonic()
                 last_event = monotonic()
+                # Off the ack path: the B0 acks and ARM above/below must not
+                # wait for the Device Information reads.
+                info_task = self.hass.async_create_background_task(
+                    self._async_read_hardware_info(),
+                    f"atflee hardware info {self.address}",
+                )
                 while True:
                     remaining = idle_timeout - (monotonic() - last_event)
                     if remaining <= 0:
@@ -729,6 +826,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                             measurement.packet_command,
                             measurement.packet_sequence,
                         )
+
+                    if measurement.packet_command == CMD_DEVICE_INFO:
+                        self._update_scale_info()
 
                     if measurement.measure_state == "handshake":
                         continue
@@ -843,6 +943,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     trace.fail(ARM if measure_started is None else MEASURE)
                 _LOGGER.debug("Atflee session failed for %s: %s", self.address, err)
             finally:
+                if info_task is not None and not info_task.done():
+                    info_task.cancel()
                 # Bounded so a stuck BLE peer never pins this task in the
                 # "running" state and blocks future advertisement triggers.
                 try:
@@ -905,3 +1007,13 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         if self._adv_unsub is None:
             raise UpdateFailed("Advertisement callback not initialized")
         return self._build_state(connected=False, measuring=False)
+
+
+def _scale_info_from_hex(value: object) -> AtfleeDeviceInfo | None:
+    """Rebuild stored device-info capabilities; None if missing or corrupt."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return parse_device_info(bytes.fromhex(value))
+    except ValueError:
+        return None

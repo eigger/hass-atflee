@@ -93,6 +93,17 @@ OPTIONAL_NOTIFY_UUIDS: tuple[str, ...] = (
     "00001531-1212-efde-1523-785feabcd123",
 )
 
+# Standard Device Information service (0x180A): AtfleeHardwareInfo field -> char.
+DEVICE_INFORMATION_CHARS: tuple[tuple[str, str], ...] = (
+    ("manufacturer", "00002a29-0000-1000-8000-00805f9b34fb"),
+    ("model", "00002a24-0000-1000-8000-00805f9b34fb"),
+    ("serial_number", "00002a25-0000-1000-8000-00805f9b34fb"),
+    ("hardware_revision", "00002a27-0000-1000-8000-00805f9b34fb"),
+    ("firmware_revision", "00002a26-0000-1000-8000-00805f9b34fb"),
+    ("software_revision", "00002a28-0000-1000-8000-00805f9b34fb"),
+)
+DEVICE_INFORMATION_READ_TIMEOUT_SECONDS = 1.5
+
 DEBUG_READ_UUIDS: tuple[str, ...] = (
     "00001534-1212-efde-1523-785feabcd123",
 )

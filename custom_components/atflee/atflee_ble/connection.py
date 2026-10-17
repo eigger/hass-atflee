@@ -14,15 +14,25 @@ from homeassistant.components.bluetooth import (
 )
 from homeassistant.core import HomeAssistant
 
-from ..const import DEBUG_READ_UUIDS, OPTIONAL_NOTIFY_UUIDS
-from .models import AtfleeDeviceInfo, AtfleeMeasurement
+from ..const import (
+    DEBUG_READ_UUIDS,
+    DEVICE_INFORMATION_CHARS,
+    DEVICE_INFORMATION_READ_TIMEOUT_SECONDS,
+    OPTIONAL_NOTIFY_UUIDS,
+)
+from .models import AtfleeDeviceInfo, AtfleeHardwareInfo, AtfleeMeasurement
 from .packet import (
     ACKED_COMMANDS,
     CMD_DEVICE_INFO,
     AtfleeMessage,
     FrameAssembler,
 )
-from .protocol import parse_device_info, parse_measurement_packet, parse_message
+from .protocol import (
+    decode_gatt_string,
+    parse_device_info,
+    parse_measurement_packet,
+    parse_message,
+)
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -302,6 +312,37 @@ class AtfleeBleClient:
         return parse_measurement_packet(
             packet, self.device_info.kg_division if self.device_info else 0
         )
+
+    async def read_hardware_info(self) -> tuple[AtfleeHardwareInfo | None, bool]:
+        """Read the Device Information service strings of the open session.
+
+        Best effort: a failed or slow read only loses that one value. Returns
+        (info or None, definitive); definitive is False when the session was
+        not usable or a read failed, so a later session may try again.
+        """
+        client = self._client
+        if client is None or not client.is_connected or not client.services:
+            return None, False
+        values: dict[str, str] = {}
+        definitive = True
+        for name, char_uuid in DEVICE_INFORMATION_CHARS:
+            try:
+                if client.services.get_characteristic(char_uuid) is None:
+                    continue
+                raw = await wait_for(
+                    client.read_gatt_char(char_uuid),
+                    timeout=DEVICE_INFORMATION_READ_TIMEOUT_SECONDS,
+                )
+            except Exception as err:  # noqa: BLE001
+                definitive = False
+                _LOGGER.debug("Atflee device info read failed: char=%s err=%s", char_uuid, err)
+                continue
+            _LOGGER.debug(
+                "Atflee device info read: char=%s hex=%s", char_uuid, bytes(raw).hex()
+            )
+            if (text := decode_gatt_string(raw)) is not None:
+                values[name] = text
+        return (AtfleeHardwareInfo(**values) if values else None), definitive
 
     def next_pkg_index(self) -> int:
         """Return the next outbound package index (0..255, wrapping)."""

@@ -12,15 +12,24 @@ from .user_profile import user_device_identifier
 
 
 def scale_device_info(entry: ConfigEntry) -> DeviceInfo:
-    """Device of the scale itself (battery, connection, diagnostics)."""
+    """Device of the scale itself (battery, connection, diagnostics).
+
+    Model, serial number and versions come from the scale's Device Information
+    service once it has been read (kept by the coordinator across restarts).
+    """
     address = entry.data[CONF_ADDRESS]
-    return DeviceInfo(
+    info = DeviceInfo(
         connections={(CONNECTION_BLUETOOTH, address)},
         identifiers={(DOMAIN, address)},
         name=entry.title,
         manufacturer="Atflee",
         model="BLE Scale",
     )
+    coordinator = getattr(entry, "runtime_data", None)
+    hardware = getattr(coordinator, "hardware_info", None)
+    if hardware is not None:
+        info.update(hardware.registry_fields())
+    return info
 
 
 def user_device_info(entry: ConfigEntry, subentry: ConfigSubentry) -> DeviceInfo:

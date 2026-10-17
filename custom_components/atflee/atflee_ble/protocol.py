@@ -555,7 +555,20 @@ def parse_device_info(data: bytes) -> AtfleeDeviceInfo | None:
         function_flags=data[6],
         algorithm_type=data[5],
         protocol_ver=data[8],
+        raw_hex=data.hex(),
     )
+
+
+def decode_gatt_string(raw: bytes | bytearray | None) -> str | None:
+    """Decode a Device Information string; None when empty or unreadable.
+
+    The values are UTF-8 strings, often NUL padded to a fixed length.
+    """
+    if not raw:
+        return None
+    text = bytes(raw).split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+    text = "".join(ch for ch in text if ch.isprintable()).strip()
+    return text or None
 
 
 def _read_impedances(

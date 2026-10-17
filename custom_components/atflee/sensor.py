@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Callable
@@ -32,7 +33,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, SEXES
 from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
 from .entity import scale_device_info, user_device_info
-from . import evaluation
+from . import evaluation, status_codes
 from .user_profile import profile_field, user_unique_id
 from .atflee_ble.models import AtfleeMeasurement, AtfleeState
 
@@ -53,9 +54,14 @@ class AtfleeStatusSensorDescription(AtfleeUserSensorDescription):
 
 @dataclass(frozen=True, kw_only=True)
 class AtfleeScaleSensorDescription(SensorEntityDescription):
-    """Description of a scale-level sensor."""
+    """Description of a scale-level sensor.
+
+    With ``code_states`` set, ``value_fn`` returns the scale's numeric code and
+    the sensor shows its readable state (ENUM) with the number as ``raw``.
+    """
 
     value_fn: Callable[[AtfleeState], float | int | str | None]
+    code_states: Mapping[int, str] | None = None
 
 
 # Measurements: one set per user, on that user's device.
@@ -298,14 +304,21 @@ SCALE_SENSORS: tuple[AtfleeScaleSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda state: state.battery_pct,
     ),
+    # Verify and scale status are only read from text payloads, which this
+    # scale's binary protocol never sends, and their codes have no known
+    # meaning: kept as raw numbers and disabled by default.
     AtfleeScaleSensorDescription(
         key="verify_status",
         entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
         icon="mdi:check-circle-outline",
         value_fn=lambda state: state.latest.verify_status if state.latest else None,
     ),
     AtfleeScaleSensorDescription(
         key="measure_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=status_codes.status_options(status_codes.MEASURE_STATUS_STATES),
+        code_states=status_codes.MEASURE_STATUS_STATES,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:state-machine",
         value_fn=lambda state: state.latest.measure_status if state.latest else None,
@@ -313,6 +326,7 @@ SCALE_SENSORS: tuple[AtfleeScaleSensorDescription, ...] = (
     AtfleeScaleSensorDescription(
         key="scale_status",
         entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
         icon="mdi:information-outline",
         value_fn=lambda state: state.latest.scale_status if state.latest else None,
     ),
@@ -330,7 +344,6 @@ SCALE_SENSORS: tuple[AtfleeScaleSensorDescription, ...] = (
 # 정수 강제 변환이 필요한 키
 _INT_KEYS = {
     "verify_status",
-    "measure_status",
     "scale_status",
     "connection_duration",
     "battery",
@@ -394,6 +407,7 @@ async def async_setup_entry(
             *(AtfleeScaleSensorEntity(coordinator, entry, d) for d in SCALE_SENSORS),
             AtfleeFailureCountSensor(coordinator, entry),
             AtfleeLastFailureSensor(coordinator, entry),
+            AtfleeElectrodesSensor(coordinator, entry),
         ]
     )
 
@@ -501,6 +515,10 @@ class _AtfleeRestoreSensor(CoordinatorEntity[AtfleeDataUpdateCoordinator], Resto
         """Convert restored state into expected value type for this entity."""
         if value is None:
             return None
+        code_states = getattr(self.entity_description, "code_states", None)
+        if code_states is not None:
+            # Also maps the raw number stored by versions without the ENUM.
+            return status_codes.restored_status(value, code_states)
         if self.entity_description.options:
             # Enum sensors hold a state slug, not a number.
             return value if value in self.entity_description.options else None
@@ -645,15 +663,47 @@ class AtfleeScaleSensorEntity(_AtfleeRestoreSensor):
         super().__init__(coordinator, description)
         self._attr_unique_id = f"{entry.data[CONF_ADDRESS]}_{description.key}"
         self._attr_device_info = scale_device_info(entry)
+        # Last numeric code behind a readable state (code sensors only).
+        self._raw_code: int | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the state, and for code sensors the code behind it."""
+        await super().async_added_to_hass()
+        if self.entity_description.code_states is None:
+            return
+        last_state = await self.async_get_last_state()
+        if last_state is None:
+            return
+        raw = last_state.attributes.get("raw")
+        if raw is None:
+            # Versions without the ENUM stored the code itself as the state.
+            raw = last_state.state
+        try:
+            self._raw_code = int(float(raw))
+        except (TypeError, ValueError, OverflowError):
+            self._raw_code = None
+
+    def _live_code(self) -> int | None:
+        """The code of the latest packet, else the last one seen or restored."""
+        code = self.entity_description.value_fn(self.coordinator.data)
+        if code is not None:
+            self._raw_code = int(code)
+        return self._raw_code
 
     def _current_value(self) -> float | int | str | None:
-        return self.entity_description.value_fn(self.coordinator.data)
+        value = self.entity_description.value_fn(self.coordinator.data)
+        code_states = self.entity_description.code_states
+        if code_states is None or value is None:
+            return value
+        return status_codes.status_state(int(value), code_states)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Attach raw packet fields; the connection sensor adds the session report."""
         state = self.coordinator.data
         attrs = _packet_attributes(state, state.latest)
+        if self.entity_description.code_states is not None:
+            attrs["raw"] = self._live_code()
         if self.entity_description.key == "connection_duration":
             # The last session's breakdown (stages, radio, likely cause); not
             # while a session runs, so it is never shown against its time.
@@ -701,7 +751,7 @@ def _packet_attributes(state: AtfleeState, m: AtfleeMeasurement | None) -> dict[
 
 
 class _AtfleeFailureSensor(CoordinatorEntity[AtfleeDataUpdateCoordinator], SensorEntity):
-    """Diagnostic sensor backed by the coordinator's blesession SessionReports."""
+    """Diagnostic sensor backed by coordinator attributes, not the packet state."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -741,3 +791,37 @@ class AtfleeLastFailureSensor(_AtfleeFailureSensor):
     def extra_state_attributes(self) -> dict[str, Any] | None:
         report = self.coordinator.session_reports.last_failure
         return dict(report) if report else None
+
+
+class AtfleeElectrodesSensor(_AtfleeFailureSensor):
+    """Electrode count from the scale's device-info message, with its other fields."""
+
+    _key = "electrodes"
+    _attr_icon = "mdi:hand-back-left-outline"
+
+    @property
+    def native_value(self) -> int | None:
+        info = self.coordinator.scale_info
+        return info.electrode_count if info else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        info = self.coordinator.scale_info
+        attrs: dict[str, Any] = {}
+        if info is not None:
+            attrs = {
+                "frequencies": info.frequency_count,
+                "impedance_channels": info.impedance_channels,
+                "impedance_tenths_of_ohm": info.impedance_scaled,
+                "heart_rate_supported": info.support_hr,
+                "balance_supported": info.support_balance,
+                "gravity_supported": info.support_gravity,
+                "function_flags": info.function_flags,
+                "algorithm_type": info.algorithm_type,
+                "kg_division": info.kg_division,
+                "device_info_hex": info.raw_hex,
+            }
+        hardware = self.coordinator.hardware_info
+        if hardware is not None:
+            attrs.update(hardware.as_dict())
+        return attrs or None
