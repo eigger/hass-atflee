@@ -182,11 +182,68 @@ class AtfleeDeviceInfo:
     function_flags: int = 0  # bit0 impedance, bit1 balance, bit2 hr, bit3 gravity
     algorithm_type: int = 0
     protocol_ver: int = 0
+    raw_hex: str = ""  # message body as received, for diagnostics
 
     @property
     def impedance_channels(self) -> int:
         """Number of impedance shorts in a stable-weight message."""
         return (self.freq_count + 1) * self.impedance_count
+
+    @property
+    def electrode_count(self) -> int:
+        """Electrodes the scale measures with (8 or 4)."""
+        return 8 if self.eight_electrode else 4
+
+    @property
+    def frequency_count(self) -> int:
+        """Impedance measuring frequencies."""
+        return self.freq_count + 1
+
+
+@dataclass(frozen=True, slots=True)
+class AtfleeHardwareInfo:
+    """Strings read from the standard BLE Device Information service (0x180A)."""
+
+    manufacturer: str | None = None  # 2A29
+    model: str | None = None  # 2A24
+    serial_number: str | None = None  # 2A25
+    hardware_revision: str | None = None  # 2A27
+    firmware_revision: str | None = None  # 2A26
+    software_revision: str | None = None  # 2A28
+
+    def as_dict(self) -> dict[str, str]:
+        """Non-empty fields, for storage and diagnostics."""
+        return {
+            name: value
+            for name in self.__slots__
+            if (value := getattr(self, name)) is not None
+        }
+
+    @classmethod
+    def from_dict(cls, data: object) -> AtfleeHardwareInfo | None:
+        """Rebuild from ``as_dict`` output; None when nothing usable is stored."""
+        if not isinstance(data, dict):
+            return None
+        values = {
+            name: value
+            for name in cls.__slots__
+            if isinstance(value := data.get(name), str) and value
+        }
+        return cls(**values) if values else None
+
+    def registry_fields(self) -> dict[str, str]:
+        """Device registry fields this info fills in (only the known ones).
+
+        The manufacturer string is deliberately not used: the device page keeps
+        the "Atflee" brand.
+        """
+        fields = {
+            "model": self.model,
+            "serial_number": self.serial_number,
+            "hw_version": self.hardware_revision,
+            "sw_version": self.firmware_revision or self.software_revision,
+        }
+        return {key: value for key, value in fields.items() if value}
 
 
 @dataclass(slots=True)

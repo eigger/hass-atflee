@@ -110,11 +110,12 @@
       "battery": { "name": "Battery" },
       "heart_rate": { "name": "Heart Rate" },
       "verify_status": { "name": "Verify Status" },
-      "measure_status": { "name": "Measure Status" },
+      "measure_status": { "name": "Measure Status", "state": {"weighing": "Weighing", "other": "Other"} },
       "scale_status": { "name": "Scale Status" },
       "connection_duration": { "name": "Connection Duration" },
       "failure_count": { "name": "Failure Count" },
-      "last_failure": { "name": "Last Failure" }
+      "last_failure": { "name": "Last Failure" },
+      "electrodes": { "name": "Electrodes" }
     },
     "binary_sensor": {
       "ble_connection": { "name": "Connection" }

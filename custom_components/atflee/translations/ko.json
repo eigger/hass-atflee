@@ -205,7 +205,11 @@
         "name": "인증 상태"
       },
       "measure_status": {
-        "name": "측정 상태"
+        "name": "측정 상태",
+        "state": {
+          "weighing": "체중 측정 중",
+          "other": "기타"
+        }
       },
       "scale_status": {
         "name": "기기 상태"
@@ -218,6 +222,9 @@
       },
       "last_failure": {
         "name": "마지막 실패"
+      },
+      "electrodes": {
+        "name": "전극 수"
       }
     },
     "binary_sensor": {

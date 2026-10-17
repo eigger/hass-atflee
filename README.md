@@ -130,7 +130,11 @@ Each user device also shows **Height**, **Birth Date** and **Sex** as diagnostic
 **Scale device**
 
 - **Battery (%)**
-- Diagnostic: **Connection** (binary sensor), **Connection Duration**, **Verify Status**, **Measure Status**, **Scale Status**, **Failure Count**, **Last Failure**
+- Diagnostic: **Connection** (binary sensor), **Connection Duration**, **Verify Status**, **Measure Status**, **Scale Status**, **Failure Count**, **Last Failure**, **Electrodes**
+- The device page shows the model, serial number, hardware and firmware version the scale reports through the standard BLE Device Information service (the device keeps the "Atflee" brand; the reported manufacturer string is only an Electrodes attribute). They are read in the background once per config-entry load (retried in later sessions, up to 3 attempts, if a read fails or times out) and remembered across restarts; until then the page shows the generic "BLE Scale" model.
+- **Electrodes** (8 or 4) comes from the device-info message the scale sends on connect. Its attributes list the other reported capabilities (impedance frequencies and channels, heart rate / balance support, ...) plus the raw message as `device_info_hex`, and the Device Information strings.
+- **Measure Status** shows the code the scale sends with its unstable weight readings as text: `weighing` (code 1, the only one observed) or `other` for any other code. The number itself is the `raw` attribute. The state keeps the last code received after the reading settles.
+- **Verify Status** and **Scale Status** are disabled by default for newly created entries (existing installs keep them enabled): this scale's protocol does not send them, and they stay raw numbers because their codes have no known meaning.
 - **Active user** (select) and **Body composition measurement** (switch)
 
 ## Device Settings (Configuration)
