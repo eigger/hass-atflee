@@ -99,8 +99,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> b
     """Unload an Atflee config entry."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
-        # A pending delayed save would otherwise outlive the unload (and could
-        # recreate the file after removal or be missed by a quick reload).
+        # Stop the session and BLE callbacks first (HA only runs the on_unload
+        # stop after this returns), so no packet can schedule another save; then
+        # write pending weights, which also cancels a delayed save. Otherwise a
+        # save could recreate the file after removal or a reload miss the newest
+        # weight.
+        await entry.runtime_data.async_stop()
         await entry.runtime_data.async_flush_last_weights()
     return unloaded
 
