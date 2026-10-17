@@ -85,9 +85,9 @@ def test_normalize_user_input() -> None:
 
 
 def test_primary_user_is_lowest_slot() -> None:
-    users = [{"name": "B", "slot": 2}, {"name": "A", "slot": 1}, {"name": "C", "slot": 3}]
-    assert up.primary_user_data(users)["name"] == "A"
-    assert up.primary_user_data([]) is None
+    users = {"b": {"slot": 2}, "a": {"slot": 1}, "c": {"slot": 3}}
+    assert up.primary_user_id(users) == "a"
+    assert up.primary_user_id({}) is None
 
 
 def test_profile_from_data() -> None:
@@ -104,3 +104,17 @@ def test_profile_from_data_rejects_unusable_data() -> None:
     assert up.profile_from_data(VALID | {"birth_date": "garbage"}) is None
     assert up.profile_from_data(VALID | {"sex": "other"}) is None
     assert up.profile_from_data(VALID | {"height_cm": "tall"}) is None
+
+
+def test_reload_needed() -> None:
+    users = {"a": ("A", {"height_cm": 170})}
+    live = ("enable_body_composition",)
+    assert not up.reload_needed(users, dict(users), {}, {}, live)
+    assert up.reload_needed(users, {}, {}, {}, live)
+    assert up.reload_needed(users, {"a": ("A", {"height_cm": 171})}, {}, {}, live)
+    # The live option alone never reloads, other options do.
+    assert not up.reload_needed(
+        users, users, {"enable_body_composition": False}, {"enable_body_composition": True}, live
+    )
+    assert up.reload_needed(users, users, {"notify_timeout_seconds": 12}, {"notify_timeout_seconds": 20}, live)
+    assert up.reload_needed(users, users, {}, {"notify_timeout_seconds": 20}, live)

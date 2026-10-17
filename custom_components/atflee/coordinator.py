@@ -9,7 +9,7 @@ from time import monotonic
 
 from blesession import SessionReports, fallback_report, stages
 from homeassistant.components import bluetooth
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
@@ -25,9 +25,9 @@ from .const import (
     GATT_PROFILES,
     SUBENTRY_TYPE_USER,
 )
-from .atflee_ble.models import AtfleeMeasurement, AtfleeState
+from .atflee_ble.models import AtfleeMeasurement, AtfleeState, next_state
 from .session_report import ARM, MEASURE, SessionTrace, build_session_report
-from .user_profile import primary_user_data, profile_from_data
+from .user_profile import primary_user_id, profile_from_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
 
     def __init__(self, hass: HomeAssistant, entry: AtfleeConfigEntry) -> None:
         self.entry = entry
-        self._warned_no_profile = False
+        self._warned_no_profile: set[str | None] = set()
         self.address: str = entry.data[CONF_ADDRESS]
         self.client = AtfleeBleClient(hass, self.address)
         self._adv_unsub = None
@@ -249,26 +249,44 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         )
         self._session_task = self.hass.async_create_task(self._run_measurement_session())
 
-    def _primary_profile(self) -> tuple[int, int, str] | None:
-        """Return (height_cm, age, sex) of the first user (lowest slot), if any."""
-        primary = primary_user_data(
-            sub.data
-            for sub in self.entry.subentries.values()
+    def user_subentries(self) -> dict[str, ConfigSubentry]:
+        """Return the configured user subentries by subentry id."""
+        return {
+            sid: sub
+            for sid, sub in self.entry.subentries.items()
             if sub.subentry_type == SUBENTRY_TYPE_USER
-        )
-        profile = profile_from_data(primary) if primary else None
+        }
+
+    def _resolve_user(self, measurement: AtfleeMeasurement | None = None) -> str | None:
+        """Return the subentry id a measurement belongs to, or None without users.
+
+        ``measurement`` is None when asked before any weight is known (the profile
+        pushed to the scale on connect). Currently every measurement is attributed
+        to the primary user (lowest slot); this is the single place where a user
+        selection or weight-based identification plugs in. With no users configured
+        nothing is attributed: the packet only updates the scale-level state.
+        """
+        users = self.user_subentries()
+        return primary_user_id({sid: sub.data for sid, sub in users.items()})
+
+    def _profile(self, user_id: str | None) -> tuple[int, int, str] | None:
+        """Return (height_cm, age, sex) of a user, or None if unavailable."""
+        sub = self.entry.subentries.get(user_id) if user_id else None
+        profile = profile_from_data(sub.data) if sub else None
         if profile is None:
-            if not self._warned_no_profile:
-                self._warned_no_profile = True
+            if user_id not in self._warned_no_profile:
+                self._warned_no_profile.add(user_id)
                 _LOGGER.warning(
-                    "Atflee: no user profile is configured; body metrics are skipped. "
-                    "Add a user from the integration page"
+                    "Atflee: no usable user profile is configured; body metrics are "
+                    "skipped. Add a user from the integration page"
                 )
             return None
         age = max(1, age_from_birth_date(profile.birth_date, dt_util.now().date()))
         return profile.height_cm, age, profile.sex
 
-    def _apply_body_composition(self, measurement: AtfleeMeasurement) -> None:
+    def _apply_body_composition(
+        self, measurement: AtfleeMeasurement, user_id: str | None
+    ) -> None:
         """Fill the composition fields from a full impedance set, if present."""
         if (
             measurement.weight_kg is None
@@ -276,7 +294,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             or len(measurement.impedances_ohm) < IMPEDANCE_CHANNELS
         ):
             return
-        profile = self._primary_profile()
+        profile = self._profile(user_id)
         if profile is None:
             return
         height_cm, age, sex = profile
@@ -322,7 +340,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
     def _build_state(
         self,
         *,
-        measurement=None,
+        measurement: AtfleeMeasurement | None = None,
+        user_id: str | None = None,
         connected: bool,
         measuring: bool,
     ) -> AtfleeState:
@@ -344,11 +363,10 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             duration_seconds = prev.connection_duration_seconds if prev else 0
             connection_started_at = prev.connection_started_at if prev else None
 
-        profile = self._primary_profile()
-        return AtfleeState(
-            measurement=measurement if measurement is not None else (prev.measurement if prev else None),
-            last_packet_hex=measurement.raw_hex if measurement is not None else (prev.last_packet_hex if prev else None),
-            user_height_cm=profile[0] if profile else None,
+        return next_state(
+            prev,
+            measurement=measurement,
+            user_id=user_id,
             connected=connected,
             measuring=measuring,
             connection_started_at=connection_started_at,
@@ -356,70 +374,13 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             updated_at=now,
         )
 
-    def _merge_with_previous_measurement(self, measurement: AtfleeMeasurement) -> AtfleeMeasurement:
-        """Preserve last known sensor values when control packets omit them."""
+    def _merge_with_previous_measurement(
+        self, measurement: AtfleeMeasurement, user_id: str | None
+    ) -> AtfleeMeasurement:
+        """Preserve this user's last known values when control packets omit them."""
         prev = self.data if isinstance(self.data, AtfleeState) else None
-        prev_measurement = prev.measurement if prev else None
-        fresh = frozenset(
-            name
-            for name in ("body_fat_pct", "moisture_pct", "protein_pct", "skeletal_muscle_pct")
-            if getattr(measurement, name) is not None
-        )
-        packet_weight = measurement.weight_kg
-        if prev_measurement is None:
-            measurement.compute_masses(fresh, packet_weight)
-            return measurement
-
-        # 기본 체중/체성분
-        if measurement.weight_kg is None:
-            measurement.weight_kg = prev_measurement.weight_kg
-        if measurement.weight_lb is None:
-            measurement.weight_lb = prev_measurement.weight_lb
-        if measurement.weight_st is None:
-            measurement.weight_st = prev_measurement.weight_st
-        if measurement.bmi is None:
-            measurement.bmi = prev_measurement.bmi
-        if measurement.body_fat_pct is None:
-            measurement.body_fat_pct = prev_measurement.body_fat_pct
-        if measurement.impedance_ohm is None:
-            measurement.impedance_ohm = prev_measurement.impedance_ohm
-        if measurement.battery_pct is None:
-            measurement.battery_pct = prev_measurement.battery_pct
-        # 확장 체성분
-        if measurement.subcutaneous_fat_pct is None:
-            measurement.subcutaneous_fat_pct = prev_measurement.subcutaneous_fat_pct
-        if measurement.visceral_fat is None:
-            measurement.visceral_fat = prev_measurement.visceral_fat
-        if measurement.muscle_pct is None:
-            measurement.muscle_pct = prev_measurement.muscle_pct
-        if measurement.muscle_mass is None:
-            measurement.muscle_mass = prev_measurement.muscle_mass
-        if measurement.bmr is None:
-            measurement.bmr = prev_measurement.bmr
-        if measurement.bone_mass is None:
-            measurement.bone_mass = prev_measurement.bone_mass
-        if measurement.moisture_pct is None:
-            measurement.moisture_pct = prev_measurement.moisture_pct
-        if measurement.protein_pct is None:
-            measurement.protein_pct = prev_measurement.protein_pct
-        if measurement.skeletal_muscle_pct is None:
-            measurement.skeletal_muscle_pct = prev_measurement.skeletal_muscle_pct
-        if measurement.physical_age is None:
-            measurement.physical_age = prev_measurement.physical_age
-        if measurement.body_score is None:
-            measurement.body_score = prev_measurement.body_score
-        # 계산된 질량: 이전 값은 유지하고, 이번 패킷의 퍼센트로만 갱신
-        for name in (
-            "body_fat_mass",
-            "fat_free_mass",
-            "body_water_mass",
-            "protein_mass",
-            "skeletal_muscle_mass",
-        ):
-            if getattr(measurement, name) is None:
-                setattr(measurement, name, getattr(prev_measurement, name))
-        measurement.compute_masses(fresh, packet_weight)
-
+        prev_measurement = prev.measurements.get(user_id) if prev and user_id else None
+        measurement.merge_with_previous(prev_measurement)
         return measurement
 
     async def _run_measurement_session(self) -> None:
@@ -484,7 +445,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     )
                 )
 
-                profile = self._primary_profile() if send_enabled else None
+                profile = self._profile(self._resolve_user()) if send_enabled else None
                 if profile is not None:
                     now_local = dt_util.now()
                     height_cm, age, sex = profile
@@ -555,7 +516,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     if measurement.measure_state == "handshake":
                         continue
 
-                    self._apply_body_composition(measurement)
+                    user_id = self._resolve_user(measurement)
+                    self._apply_body_composition(measurement, user_id)
 
                     # Ignore control/heartbeat packets that do not carry any mapped value.
                     # Example: 001a010000... (frequently interleaved with stable A3).
@@ -588,9 +550,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         )
                         continue
 
-                    measurement = self._merge_with_previous_measurement(measurement)
+                    measurement = self._merge_with_previous_measurement(measurement, user_id)
 
-                    profile = self._primary_profile()
+                    profile = self._profile(user_id)
                     if profile and measurement.bmi is None and measurement.weight_kg is not None:
                         height_m = profile[0] / 100.0
                         measurement.bmi = round(measurement.weight_kg / (height_m * height_m), 2)
@@ -598,6 +560,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     self.async_set_updated_data(
                         self._build_state(
                             measurement=measurement,
+                            user_id=user_id,
                             connected=True,
                             measuring=not measurement.is_body_composition_complete,
                         )

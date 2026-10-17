@@ -13,7 +13,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState, ConfigSubentry
 from homeassistant.const import (
     CONF_ADDRESS,
     STATE_UNAVAILABLE,
@@ -23,235 +23,215 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import async_get as async_get_restore_state
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
-from .atflee_ble.models import AtfleeState
+from .entity import scale_device_info, user_device_info
+from .user_profile import user_unique_id
+from .atflee_ble.models import AtfleeMeasurement, AtfleeState
 
 
 @dataclass(frozen=True, kw_only=True)
-class AtfleeSensorDescription(SensorEntityDescription):
-    """Atflee sensor entity description."""
+class AtfleeUserSensorDescription(SensorEntityDescription):
+    """Description of a per-user measurement sensor."""
+
+    value_fn: Callable[[AtfleeMeasurement], float | int | str | None]
+
+
+@dataclass(frozen=True, kw_only=True)
+class AtfleeScaleSensorDescription(SensorEntityDescription):
+    """Description of a scale-level sensor."""
 
     value_fn: Callable[[AtfleeState], float | int | str | None]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 기본 체중 / 체성분
-# ─────────────────────────────────────────────────────────────────────────────
-SENSORS: tuple[AtfleeSensorDescription, ...] = (
-    AtfleeSensorDescription(
+# Measurements: one set per user, on that user's device.
+USER_SENSORS: tuple[AtfleeUserSensorDescription, ...] = (
+    AtfleeUserSensorDescription(
         key="weight",
-        
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         device_class=SensorDeviceClass.WEIGHT,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda state: state.measurement.weight_kg if state.measurement else None,
+        value_fn=lambda m: m.weight_kg,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="body_fat",
-        
         native_unit_of_measurement="%",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:water-percent",
-        value_fn=lambda state: state.measurement.body_fat_pct if state.measurement else None,
+        value_fn=lambda m: m.body_fat_pct,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="bmi",
-        
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:scale-bathroom",
-        value_fn=lambda state: state.measurement.bmi if state.measurement else None,
+        value_fn=lambda m: m.bmi,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="impedance",
-        
         native_unit_of_measurement="ohm",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:flash",
-        value_fn=lambda state: state.measurement.impedance_ohm if state.measurement else None,
+        value_fn=lambda m: m.impedance_ohm,
     ),
-    # ─────────────────────────────────────────────────────────────────────────
-    # 확장 체성분
-    # ─────────────────────────────────────────────────────────────────────────
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="subcutaneous_fat",
-        
         native_unit_of_measurement="%",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:water-percent",
-        value_fn=lambda state: state.measurement.subcutaneous_fat_pct if state.measurement else None,
+        value_fn=lambda m: m.subcutaneous_fat_pct,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="visceral_fat",
-        
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:stomach",
-        value_fn=lambda state: state.measurement.visceral_fat if state.measurement else None,
+        value_fn=lambda m: m.visceral_fat,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="muscle_pct",
-        
         native_unit_of_measurement="%",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:arm-flex",
-        value_fn=lambda state: state.measurement.muscle_pct if state.measurement else None,
+        value_fn=lambda m: m.muscle_pct,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="muscle_mass",
-        
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         device_class=SensorDeviceClass.WEIGHT,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda state: state.measurement.muscle_mass if state.measurement else None,
+        value_fn=lambda m: m.muscle_mass,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="bmr",
-        
         native_unit_of_measurement="kcal",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:fire",
-        value_fn=lambda state: state.measurement.bmr if state.measurement else None,
+        value_fn=lambda m: m.bmr,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="bone_mass",
-        
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         device_class=SensorDeviceClass.WEIGHT,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:bone",
-        value_fn=lambda state: state.measurement.bone_mass if state.measurement else None,
+        value_fn=lambda m: m.bone_mass,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="moisture_pct",
-        
         native_unit_of_measurement="%",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:water",
-        value_fn=lambda state: state.measurement.moisture_pct if state.measurement else None,
+        value_fn=lambda m: m.moisture_pct,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="protein_pct",
-        
         native_unit_of_measurement="%",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:food-steak",
-        value_fn=lambda state: state.measurement.protein_pct if state.measurement else None,
+        value_fn=lambda m: m.protein_pct,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="skeletal_muscle_pct",
-        
         native_unit_of_measurement="%",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:arm-flex-outline",
-        value_fn=lambda state: state.measurement.skeletal_muscle_pct if state.measurement else None,
+        value_fn=lambda m: m.skeletal_muscle_pct,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="body_fat_mass",
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         device_class=SensorDeviceClass.WEIGHT,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:scale-balance",
-        value_fn=lambda state: state.measurement.body_fat_mass if state.measurement else None,
+        value_fn=lambda m: m.body_fat_mass,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="fat_free_mass",
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         device_class=SensorDeviceClass.WEIGHT,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:human",
-        value_fn=lambda state: state.measurement.fat_free_mass if state.measurement else None,
+        value_fn=lambda m: m.fat_free_mass,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="body_water_mass",
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         device_class=SensorDeviceClass.WEIGHT,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:water",
-        value_fn=lambda state: state.measurement.body_water_mass if state.measurement else None,
+        value_fn=lambda m: m.body_water_mass,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="protein_mass",
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         device_class=SensorDeviceClass.WEIGHT,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:food-steak",
-        value_fn=lambda state: state.measurement.protein_mass if state.measurement else None,
+        value_fn=lambda m: m.protein_mass,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="skeletal_muscle_mass",
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         device_class=SensorDeviceClass.WEIGHT,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:arm-flex-outline",
-        value_fn=lambda state: state.measurement.skeletal_muscle_mass if state.measurement else None,
+        value_fn=lambda m: m.skeletal_muscle_mass,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="physical_age",
-        
         native_unit_of_measurement="years",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:calendar-heart",
-        value_fn=lambda state: state.measurement.physical_age if state.measurement else None,
+        value_fn=lambda m: m.physical_age,
     ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="body_score",
-        
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:medal",
-        value_fn=lambda state: state.measurement.body_score if state.measurement else None,
+        value_fn=lambda m: m.body_score,
     ),
-    # ─────────────────────────────────────────────────────────────────────────
-    # 기기 상태
-    # ─────────────────────────────────────────────────────────────────────────
-    AtfleeSensorDescription(
-        key="battery",
-        
-        native_unit_of_measurement="%",
-        device_class=SensorDeviceClass.BATTERY,
-        state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda state: state.measurement.battery_pct if state.measurement else None,
-    ),
-    AtfleeSensorDescription(
+    AtfleeUserSensorDescription(
         key="heart_rate",
-        
         native_unit_of_measurement="bpm",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:heart-pulse",
-        value_fn=lambda state: state.measurement.heart_rate if state.measurement else None,
+        value_fn=lambda m: m.heart_rate,
     ),
-    # ─────────────────────────────────────────────────────────────────────────
-    # 진단 / 디버그
-    # ─────────────────────────────────────────────────────────────────────────
-    AtfleeSensorDescription(
+)
+
+# Scale-level state: battery and diagnostics, on the scale device.
+SCALE_SENSORS: tuple[AtfleeScaleSensorDescription, ...] = (
+    AtfleeScaleSensorDescription(
+        key="battery",
+        native_unit_of_measurement="%",
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda state: state.battery_pct,
+    ),
+    AtfleeScaleSensorDescription(
         key="verify_status",
-        
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:check-circle-outline",
-        value_fn=lambda state: state.measurement.verify_status if state.measurement else None,
+        value_fn=lambda state: state.latest.verify_status if state.latest else None,
     ),
-    AtfleeSensorDescription(
+    AtfleeScaleSensorDescription(
         key="measure_status",
-        
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:state-machine",
-        value_fn=lambda state: state.measurement.measure_status if state.measurement else None,
+        value_fn=lambda state: state.latest.measure_status if state.latest else None,
     ),
-    AtfleeSensorDescription(
+    AtfleeScaleSensorDescription(
         key="scale_status",
-        
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:information-outline",
-        value_fn=lambda state: state.measurement.scale_status if state.measurement else None,
+        value_fn=lambda state: state.latest.scale_status if state.latest else None,
     ),
-    AtfleeSensorDescription(
+    AtfleeScaleSensorDescription(
         key="connection_duration",
-        
         native_unit_of_measurement=UnitOfTime.SECONDS,
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.MEASUREMENT,
@@ -273,14 +253,10 @@ _INT_KEYS = {
 }
 
 
-# Sensors that always exist. Every other sensor is created the first time the
-# scale (or the composition calculation) produces a value for it, so values the
-# scale never delivers do not show up as permanently unknown entities.
-_ALWAYS_KEYS = frozenset({"weight", "impedance", "connection_duration"})
-
-
-def _unique_id(address: str, key: str) -> str:
-    return f"{address}_{key}"
+# Per-user sensors that always exist. Every other one is created the first time
+# the scale (or the composition calculation) produces a value for that user, so
+# values the scale never delivers do not show up as permanently unknown entities.
+_ALWAYS_KEYS = frozenset({"weight", "impedance"})
 
 
 def _is_customised(reg_entry: er.RegistryEntry) -> bool:
@@ -313,79 +289,91 @@ async def async_setup_entry(
     address = entry.data[CONF_ADDRESS]
     registry = er.async_get(hass)
 
-    def has_value(description: AtfleeSensorDescription) -> bool:
+    async_add_entities(
+        [
+            *(AtfleeScaleSensorEntity(coordinator, entry, d) for d in SCALE_SENSORS),
+            AtfleeFailureCountSensor(coordinator, entry),
+            AtfleeLastFailureSensor(coordinator, entry),
+        ]
+    )
+
+    def has_value(subentry_id: str, description: AtfleeUserSensorDescription) -> bool:
         data = coordinator.data
-        return data is not None and description.value_fn(data) is not None
+        measurement = data.measurements.get(subentry_id) if data else None
+        return measurement is not None and description.value_fn(measurement) is not None
 
-    entities: list[SensorEntity] = []
-    pending: dict[str, AtfleeSensorDescription] = {}
-    for description in SENSORS:
-        if description.key in _ALWAYS_KEYS:
-            entities.append(AtfleeSensorEntity(coordinator, entry, description))
-            continue
-        entity_id = registry.async_get_entity_id(
-            "sensor", DOMAIN, _unique_id(address, description.key)
-        )
-        reg_entry = registry.async_get(entity_id) if entity_id else None
-        if reg_entry is not None:
-            if (
-                has_value(description)
-                or _is_customised(reg_entry)
-                or _has_stored_value(hass, reg_entry.entity_id)
-            ):
-                entities.append(AtfleeSensorEntity(coordinator, entry, description))
+    # Per user: descriptions still waiting for their first value.
+    pending: dict[str, dict[str, AtfleeUserSensorDescription]] = {}
+    for subentry_id, subentry in coordinator.user_subentries().items():
+        entities: list[SensorEntity] = []
+        pending[subentry_id] = {}
+        for description in USER_SENSORS:
+            if description.key in _ALWAYS_KEYS:
+                entities.append(
+                    AtfleeUserSensorEntity(coordinator, entry, subentry, description)
+                )
                 continue
-            # Left over from a version that created it without ever having a value.
-            registry.async_remove(reg_entry.entity_id)
-        pending[description.key] = description
-
-    entities.append(AtfleeFailureCountSensor(coordinator, entry))
-    entities.append(AtfleeLastFailureSensor(coordinator, entry))
-    async_add_entities(entities)
+            entity_id = registry.async_get_entity_id(
+                "sensor", DOMAIN, user_unique_id(address, subentry_id, description.key)
+            )
+            reg_entry = registry.async_get(entity_id) if entity_id else None
+            if reg_entry is not None:
+                if (
+                    has_value(subentry_id, description)
+                    or _is_customised(reg_entry)
+                    or _has_stored_value(hass, reg_entry.entity_id)
+                ):
+                    entities.append(
+                        AtfleeUserSensorEntity(coordinator, entry, subentry, description)
+                    )
+                    continue
+                # Left over from a version that created it without ever having a value.
+                registry.async_remove(reg_entry.entity_id)
+            pending[subentry_id][description.key] = description
+        async_add_entities(entities, config_subentry_id=subentry_id)
 
     @callback
     def _add_ready_sensors() -> None:
         if entry.state is ConfigEntryState.UNLOAD_IN_PROGRESS:
             return
-        ready = [d for d in pending.values() if has_value(d)]
-        if not ready:
-            return
-        for description in ready:
-            del pending[description.key]
-        async_add_entities(
-            [AtfleeSensorEntity(coordinator, entry, d) for d in ready]
-        )
+        for subentry_id, waiting in pending.items():
+            ready = [d for d in waiting.values() if has_value(subentry_id, d)]
+            if not ready:
+                continue
+            for description in ready:
+                del waiting[description.key]
+            subentry = entry.subentries[subentry_id]
+            async_add_entities(
+                [
+                    AtfleeUserSensorEntity(coordinator, entry, subentry, d)
+                    for d in ready
+                ],
+                config_subentry_id=subentry_id,
+            )
 
     entry.async_on_unload(coordinator.async_add_listener(_add_ready_sensors))
     _add_ready_sensors()
 
 
-class AtfleeSensorEntity(
-    CoordinatorEntity[AtfleeDataUpdateCoordinator], RestoreSensor
-):
-    """Base Atflee sensor entity."""
+class _AtfleeRestoreSensor(CoordinatorEntity[AtfleeDataUpdateCoordinator], RestoreSensor):
+    """Sensor that falls back to its restored value while the scale sends none."""
 
     _attr_has_entity_name = True
+    entity_description: SensorEntityDescription
 
     def __init__(
         self,
         coordinator: AtfleeDataUpdateCoordinator,
-        entry: ConfigEntry,
-        description: AtfleeSensorDescription,
+        description: SensorEntityDescription,
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_translation_key = description.key
-        address = entry.data[CONF_ADDRESS]
-        self._attr_unique_id = _unique_id(address, description.key)
-        self._attr_device_info = DeviceInfo(
-            connections={(CONNECTION_BLUETOOTH, address)},
-            identifiers={(DOMAIN, address)},
-            name=entry.title,
-            manufacturer="Atflee",
-            model="BLE Scale",
-        )
         self._restored_native_value: float | int | str | None = None
+
+    def _current_value(self) -> float | int | str | None:
+        """Return the live value, or None when the scale has not sent one."""
+        raise NotImplementedError
 
     async def async_added_to_hass(self) -> None:
         """Restore previous sensor state on HA restart."""
@@ -422,18 +410,69 @@ class AtfleeSensorEntity(
     @property
     def native_value(self) -> float | int | str | None:
         """Return the sensor value."""
-        value = self.entity_description.value_fn(self.coordinator.data)
+        value = self._current_value()
         if value is not None:
             self._restored_native_value = value
             return value
         return self._restored_native_value
 
+
+class AtfleeUserSensorEntity(_AtfleeRestoreSensor):
+    """Measurement sensor of one user."""
+
+    entity_description: AtfleeUserSensorDescription
+
+    def __init__(
+        self,
+        coordinator: AtfleeDataUpdateCoordinator,
+        entry: ConfigEntry,
+        subentry: ConfigSubentry,
+        description: AtfleeUserSensorDescription,
+    ) -> None:
+        super().__init__(coordinator, description)
+        self._subentry_id = subentry.subentry_id
+        self._attr_unique_id = user_unique_id(
+            entry.data[CONF_ADDRESS], subentry.subentry_id, description.key
+        )
+        self._attr_device_info = user_device_info(entry, subentry)
+
+    @property
+    def _measurement(self) -> AtfleeMeasurement | None:
+        return self.coordinator.data.measurements.get(self._subentry_id)
+
+    def _current_value(self) -> float | int | str | None:
+        measurement = self._measurement
+        return None if measurement is None else self.entity_description.value_fn(measurement)
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Attach raw packet and body composition fields for diagnostic purposes."""
+        return _packet_attributes(self.coordinator.data, self._measurement)
+
+
+class AtfleeScaleSensorEntity(_AtfleeRestoreSensor):
+    """Scale-level sensor (battery, diagnostics)."""
+
+    entity_description: AtfleeScaleSensorDescription
+
+    def __init__(
+        self,
+        coordinator: AtfleeDataUpdateCoordinator,
+        entry: ConfigEntry,
+        description: AtfleeScaleSensorDescription,
+    ) -> None:
+        super().__init__(coordinator, description)
+        self._attr_unique_id = f"{entry.data[CONF_ADDRESS]}_{description.key}"
+        self._attr_device_info = scale_device_info(entry)
+
+    def _current_value(self) -> float | int | str | None:
+        return self.entity_description.value_fn(self.coordinator.data)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Attach raw packet fields; the connection sensor adds the session report."""
         state = self.coordinator.data
-        m = state.measurement
-        attrs = self._packet_attributes(state, m)
+        attrs = _packet_attributes(state, state.latest)
         if self.entity_description.key == "connection_duration":
             # The last session's breakdown (stages, radio, likely cause); not
             # while a session runs, so it is never shown against its time.
@@ -443,33 +482,32 @@ class AtfleeSensorEntity(
                     attrs = {**attrs, **report}
         return attrs
 
-    @staticmethod
-    def _packet_attributes(state: AtfleeState, m: Any) -> dict[str, Any]:
-        return {
-            # 패킷 진단
-            "last_packet_hex": state.last_packet_hex,
-            "user_height_cm": state.user_height_cm,
-            "ble_connected": state.connected,
-            "connection_started_at": (
-                state.connection_started_at.isoformat() if state.connection_started_at else None
-            ),
-            "connection_duration_seconds": state.connection_duration_seconds,
-            "measuring": state.measuring,
-            "measure_state": m.measure_state if m else None,
-            "stable": m.is_stable if m else None,
-            "body_composition_complete": m.is_body_composition_complete if m else None,
-            # 확장 체성분 속성
-            "heart_rate": m.heart_rate if m else None,
-            "support_upload_bodyfat": m.support_upload_bodyfat if m else None,
-            "weight_lb": m.weight_lb if m else None,
-            "weight_st": m.weight_st if m else None,
-            # 패킷 구조
-            "packet_command": m.packet_command if m else None,
-            "packet_sequence": m.packet_sequence if m else None,
-            "packet_tail": m.packet_tail if m else None,
-            "extended_payload_hex": m.extended_payload_hex if m else None,
-            "updated_at": state.updated_at.isoformat() if state.updated_at else None,
-        }
+
+def _packet_attributes(state: AtfleeState, m: AtfleeMeasurement | None) -> dict[str, Any]:
+    return {
+        # 패킷 진단
+        "last_packet_hex": state.last_packet_hex,
+        "ble_connected": state.connected,
+        "connection_started_at": (
+            state.connection_started_at.isoformat() if state.connection_started_at else None
+        ),
+        "connection_duration_seconds": state.connection_duration_seconds,
+        "measuring": state.measuring,
+        "measure_state": m.measure_state if m else None,
+        "stable": m.is_stable if m else None,
+        "body_composition_complete": m.is_body_composition_complete if m else None,
+        # 확장 체성분 속성
+        "heart_rate": m.heart_rate if m else None,
+        "support_upload_bodyfat": m.support_upload_bodyfat if m else None,
+        "weight_lb": m.weight_lb if m else None,
+        "weight_st": m.weight_st if m else None,
+        # 패킷 구조
+        "packet_command": m.packet_command if m else None,
+        "packet_sequence": m.packet_sequence if m else None,
+        "packet_tail": m.packet_tail if m else None,
+        "extended_payload_hex": m.extended_payload_hex if m else None,
+        "updated_at": state.updated_at.isoformat() if state.updated_at else None,
+    }
 
 
 class _AtfleeFailureSensor(CoordinatorEntity[AtfleeDataUpdateCoordinator], SensorEntity):
@@ -484,13 +522,7 @@ class _AtfleeFailureSensor(CoordinatorEntity[AtfleeDataUpdateCoordinator], Senso
         address = entry.data[CONF_ADDRESS]
         self._attr_translation_key = self._key
         self._attr_unique_id = f"{address}_{self._key}"
-        self._attr_device_info = DeviceInfo(
-            connections={(CONNECTION_BLUETOOTH, address)},
-            identifiers={(DOMAIN, address)},
-            name=entry.title,
-            manufacturer="Atflee",
-            model="BLE Scale",
-        )
+        self._attr_device_info = scale_device_info(entry)
 
 
 class AtfleeFailureCountSensor(_AtfleeFailureSensor):

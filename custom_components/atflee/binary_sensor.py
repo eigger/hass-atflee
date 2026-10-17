@@ -10,13 +10,12 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
+from .entity import scale_device_info
 
 CONNECTION_SENSOR = BinarySensorEntityDescription(
     key="ble_connection",
@@ -48,13 +47,7 @@ class AtfleeConnectionBinarySensor(
         super().__init__(coordinator)
         address = entry.data[CONF_ADDRESS]
         self._attr_unique_id = f"{address}_ble_connection"
-        self._attr_device_info = DeviceInfo(
-            connections={(CONNECTION_BLUETOOTH, address)},
-            identifiers={(DOMAIN, address)},
-            name=entry.title,
-            manufacturer="Atflee",
-            model="BLE Scale",
-        )
+        self._attr_device_info = scale_device_info(entry)
 
     @property
     def is_on(self) -> bool:

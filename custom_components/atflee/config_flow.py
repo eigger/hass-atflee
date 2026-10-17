@@ -18,7 +18,7 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     ConfigSubentryData,
     ConfigSubentryFlow,
-    OptionsFlowWithReload,
+    OptionsFlow,
     SubentryFlowResult,
 )
 from homeassistant.const import CONF_ADDRESS
@@ -254,7 +254,7 @@ class AtfleeConfigFlow(ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlowWithReload:
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Return the options flow."""
         return AtfleeOptionsFlow(config_entry)
 
@@ -267,7 +267,7 @@ class AtfleeConfigFlow(ConfigFlow, domain=DOMAIN):
         return {SUBENTRY_TYPE_USER: UserSubentryFlow}
 
 
-class AtfleeOptionsFlow(OptionsFlowWithReload):
+class AtfleeOptionsFlow(OptionsFlow):
     """Atflee options flow."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:

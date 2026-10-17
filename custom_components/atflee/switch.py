@@ -8,16 +8,14 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_ENABLE_BODY_COMP,
     DEFAULT_ENABLE_BODY_COMP,
-    DOMAIN,
 )
 from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
+from .entity import scale_device_info
 
 
 async def async_setup_entry(
@@ -42,13 +40,7 @@ class AtfleeBodyCompSwitch(SwitchEntity):
         self._entry = entry
         address = entry.data[CONF_ADDRESS]
         self._attr_unique_id = f"{address}_enable_body_composition"
-        self._attr_device_info = DeviceInfo(
-            connections={(CONNECTION_BLUETOOTH, address)},
-            identifiers={(DOMAIN, address)},
-            name=entry.title,
-            manufacturer="Atflee",
-            model="BLE Scale",
-        )
+        self._attr_device_info = scale_device_info(entry)
 
     @property
     def is_on(self) -> bool:

@@ -2,8 +2,43 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+
+
+# Percentages whose arrival in a packet triggers a fresh kg computation.
+_FRESH_PCT_FIELDS = (
+    "body_fat_pct",
+    "moisture_pct",
+    "protein_pct",
+    "skeletal_muscle_pct",
+)
+
+# Fields carried over from the user's previous measurement when a packet omits them.
+_CARRIED_FIELDS = (
+    "weight_kg",
+    "weight_lb",
+    "weight_st",
+    "bmi",
+    "body_fat_pct",
+    "impedance_ohm",
+    "subcutaneous_fat_pct",
+    "visceral_fat",
+    "muscle_pct",
+    "muscle_mass",
+    "bmr",
+    "bone_mass",
+    "moisture_pct",
+    "protein_pct",
+    "skeletal_muscle_pct",
+    "physical_age",
+    "body_score",
+    "body_fat_mass",
+    "fat_free_mass",
+    "body_water_mass",
+    "protein_mass",
+    "skeletal_muscle_mass",
+)
 
 
 @dataclass(slots=True)
@@ -78,13 +113,32 @@ class AtfleeMeasurement:
             fat = mass(self.body_fat_pct)
             self.body_fat_mass = fat
             self.fat_free_mass = None if fat is None else round(weight - fat, 2)
-        for field, pct_field in (
+        for mass_field, pct_field in (
             ("body_water_mass", "moisture_pct"),
             ("protein_mass", "protein_pct"),
             ("skeletal_muscle_mass", "skeletal_muscle_pct"),
         ):
             if pct_field in fresh:
-                setattr(self, field, mass(getattr(self, pct_field)))
+                setattr(self, mass_field, mass(getattr(self, pct_field)))
+
+    def merge_with_previous(self, prev: AtfleeMeasurement | None) -> None:
+        """Keep the last known values when this packet omits them.
+
+        ``prev`` must be the previous measurement of the *same user*; values are
+        never carried over between users. Scale-level fields (battery, status
+        codes) are not merged here, they live on :class:`AtfleeState`.
+        """
+        fresh = frozenset(
+            name
+            for name in _FRESH_PCT_FIELDS
+            if getattr(self, name) is not None
+        )
+        packet_weight = self.weight_kg
+        if prev is not None:
+            for name in _CARRIED_FIELDS:
+                if getattr(self, name) is None:
+                    setattr(self, name, getattr(prev, name))
+        self.compute_masses(fresh, packet_weight)
 
 
 @dataclass(slots=True)
@@ -111,13 +165,64 @@ class AtfleeDeviceInfo:
 
 @dataclass(slots=True)
 class AtfleeState:
-    """Latest coordinator state."""
+    """Latest coordinator state.
 
-    measurement: AtfleeMeasurement | None = None
+    Measurements are kept per user (keyed by the user subentry id). ``latest``
+    is the most recent packet regardless of who it was attributed to; it feeds
+    the scale-level diagnostics and the raw packet attributes.
+    """
+
+    measurements: dict[str, AtfleeMeasurement] = field(default_factory=dict)
+    last_user_id: str | None = None
+    latest: AtfleeMeasurement | None = None
+    battery_pct: int | None = None
     last_packet_hex: str | None = None
-    user_height_cm: int | None = None
     connected: bool = False
     measuring: bool = False
     connection_started_at: datetime | None = None
     connection_duration_seconds: int = 0
     updated_at: datetime | None = None
+
+
+def next_state(
+    prev: AtfleeState | None,
+    *,
+    measurement: AtfleeMeasurement | None,
+    user_id: str | None,
+    connected: bool,
+    measuring: bool,
+    connection_started_at: datetime | None,
+    connection_duration_seconds: int,
+    updated_at: datetime,
+) -> AtfleeState:
+    """Build the next state from the previous one and an optional new packet.
+
+    A packet attributed to a user replaces only that user's entry; the other
+    users' measurements are carried over untouched. A packet without a user
+    (``user_id`` is None) only updates the scale-level fields.
+    """
+    measurements = dict(prev.measurements) if prev else {}
+    last_user_id = prev.last_user_id if prev else None
+    latest = prev.latest if prev else None
+    battery_pct = prev.battery_pct if prev else None
+    last_packet_hex = prev.last_packet_hex if prev else None
+    if measurement is not None:
+        latest = measurement
+        last_packet_hex = measurement.raw_hex
+        if measurement.battery_pct is not None:
+            battery_pct = measurement.battery_pct
+        if user_id is not None:
+            measurements[user_id] = measurement
+            last_user_id = user_id
+    return AtfleeState(
+        measurements=measurements,
+        last_user_id=last_user_id,
+        latest=latest,
+        battery_pct=battery_pct,
+        last_packet_hex=last_packet_hex,
+        connected=connected,
+        measuring=measuring,
+        connection_started_at=connection_started_at,
+        connection_duration_seconds=connection_duration_seconds,
+        updated_at=updated_at,
+    )
