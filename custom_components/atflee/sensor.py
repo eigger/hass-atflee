@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Callable
 
 from homeassistant.components.sensor import (
@@ -18,6 +18,7 @@ from homeassistant.const import (
     CONF_ADDRESS,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    UnitOfLength,
     UnitOfMass,
     UnitOfTime,
 )
@@ -28,10 +29,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import async_get as async_get_restore_state
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, SEXES
 from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
 from .entity import scale_device_info, user_device_info
-from .user_profile import user_unique_id
+from . import evaluation
+from .user_profile import profile_field, user_unique_id
 from .atflee_ble.models import AtfleeMeasurement, AtfleeState
 
 
@@ -40,6 +42,13 @@ class AtfleeUserSensorDescription(SensorEntityDescription):
     """Description of a per-user measurement sensor."""
 
     value_fn: Callable[[AtfleeMeasurement], float | int | str | None]
+
+
+@dataclass(frozen=True, kw_only=True)
+class AtfleeStatusSensorDescription(AtfleeUserSensorDescription):
+    """Description of an evaluation sensor; value_fn returns the metric it judges."""
+
+    evaluate: Callable[[float, int | None, bool | None], evaluation.Evaluation | None]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -201,6 +210,83 @@ USER_SENSORS: tuple[AtfleeUserSensorDescription, ...] = (
         icon="mdi:heart-pulse",
         value_fn=lambda m: m.heart_rate,
     ),
+    # Evaluations: a verdict on one of the values above, created with it.
+    AtfleeStatusSensorDescription(
+        key="bmi_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=evaluation.BMI_STATES,
+        icon="mdi:scale-bathroom",
+        value_fn=lambda m: m.bmi,
+        evaluate=evaluation.evaluate_bmi,
+    ),
+    AtfleeStatusSensorDescription(
+        key="body_fat_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=evaluation.BODY_FAT_STATES,
+        icon="mdi:water-percent",
+        value_fn=lambda m: m.body_fat_pct,
+        evaluate=evaluation.evaluate_body_fat,
+    ),
+    AtfleeStatusSensorDescription(
+        key="visceral_fat_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=evaluation.VISCERAL_FAT_STATES,
+        icon="mdi:stomach",
+        value_fn=lambda m: m.visceral_fat,
+        evaluate=evaluation.evaluate_visceral_fat,
+    ),
+    AtfleeStatusSensorDescription(
+        key="body_water_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=evaluation.BODY_WATER_STATES,
+        entity_registry_enabled_default=False,
+        icon="mdi:water",
+        value_fn=lambda m: m.moisture_pct,
+        evaluate=evaluation.evaluate_body_water,
+    ),
+    AtfleeStatusSensorDescription(
+        key="body_score_status",
+        device_class=SensorDeviceClass.ENUM,
+        options=evaluation.BODY_SCORE_STATES,
+        entity_registry_enabled_default=False,
+        icon="mdi:medal",
+        value_fn=lambda m: m.body_score,
+        evaluate=evaluation.evaluate_body_score,
+    ),
+)
+
+@dataclass(frozen=True, kw_only=True)
+class AtfleeProfileSensorDescription(SensorEntityDescription):
+    """Description of a profile sensor read from the user's subentry data."""
+
+    field: str
+
+
+# The user's own settings, shown on the user device from the start.
+PROFILE_SENSORS: tuple[AtfleeProfileSensorDescription, ...] = (
+    AtfleeProfileSensorDescription(
+        key="profile_height",
+        field="height_cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        native_unit_of_measurement=UnitOfLength.CENTIMETERS,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:human-male-height",
+    ),
+    AtfleeProfileSensorDescription(
+        key="profile_birth_date",
+        field="birth_date",
+        device_class=SensorDeviceClass.DATE,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:cake-variant",
+    ),
+    AtfleeProfileSensorDescription(
+        key="profile_sex",
+        field="sex",
+        device_class=SensorDeviceClass.ENUM,
+        options=list(SEXES),
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:gender-male-female",
+    ),
 )
 
 # Scale-level state: battery and diagnostics, on the scale device.
@@ -259,6 +345,20 @@ _INT_KEYS = {
 _ALWAYS_KEYS = frozenset({"weight", "impedance"})
 
 
+def _user_entity(
+    coordinator: AtfleeDataUpdateCoordinator,
+    entry: ConfigEntry,
+    subentry: ConfigSubentry,
+    description: AtfleeUserSensorDescription,
+) -> AtfleeUserSensorEntity:
+    cls = (
+        AtfleeStatusSensorEntity
+        if isinstance(description, AtfleeStatusSensorDescription)
+        else AtfleeUserSensorEntity
+    )
+    return cls(coordinator, entry, subentry, description)
+
+
 def _is_customised(reg_entry: er.RegistryEntry) -> bool:
     """Return True when the user changed or disabled this registry entry."""
     return bool(
@@ -300,7 +400,17 @@ async def async_setup_entry(
     def has_value(subentry_id: str, description: AtfleeUserSensorDescription) -> bool:
         data = coordinator.data
         measurement = data.measurements.get(subentry_id) if data else None
-        return measurement is not None and description.value_fn(measurement) is not None
+        if measurement is None:
+            return False
+        value = description.value_fn(measurement)
+        if value is None:
+            return False
+        if isinstance(description, AtfleeStatusSensorDescription):
+            # Ready only when a verdict can actually be produced (e.g. age in range).
+            profile = coordinator.body_profile(subentry_id)
+            age, male = (None, None) if profile is None else (profile[1], profile[2] == "male")
+            return description.evaluate(value, age, male) is not None
+        return True
 
     # Per user: descriptions still waiting for their first value.
     pending: dict[str, dict[str, AtfleeUserSensorDescription]] = {}
@@ -309,27 +419,34 @@ async def async_setup_entry(
         pending[subentry_id] = {}
         for description in USER_SENSORS:
             if description.key in _ALWAYS_KEYS:
-                entities.append(
-                    AtfleeUserSensorEntity(coordinator, entry, subentry, description)
-                )
+                entities.append(_user_entity(coordinator, entry, subentry, description))
                 continue
             entity_id = registry.async_get_entity_id(
                 "sensor", DOMAIN, user_unique_id(address, subentry_id, description.key)
             )
             reg_entry = registry.async_get(entity_id) if entity_id else None
             if reg_entry is not None:
+                is_status = isinstance(description, AtfleeStatusSensorDescription)
                 if (
                     has_value(subentry_id, description)
                     or _is_customised(reg_entry)
+                    # Status sensors never existed without a verdict, so keep their
+                    # entries across restarts (they stay unknown until the next weigh-in).
+                    or is_status
                     or _has_stored_value(hass, reg_entry.entity_id)
+                    # Disabled-by-default entries only exist because a value once arrived;
+                    # enabling one reloads the entry before any measurement is available.
+                    or not description.entity_registry_enabled_default
                 ):
-                    entities.append(
-                        AtfleeUserSensorEntity(coordinator, entry, subentry, description)
-                    )
+                    entities.append(_user_entity(coordinator, entry, subentry, description))
                     continue
                 # Left over from a version that created it without ever having a value.
                 registry.async_remove(reg_entry.entity_id)
             pending[subentry_id][description.key] = description
+        entities.extend(
+            AtfleeProfileSensorEntity(coordinator, entry, subentry, d)
+            for d in PROFILE_SENSORS
+        )
         async_add_entities(entities, config_subentry_id=subentry_id)
 
     @callback
@@ -344,10 +461,7 @@ async def async_setup_entry(
                 del waiting[description.key]
             subentry = entry.subentries[subentry_id]
             async_add_entities(
-                [
-                    AtfleeUserSensorEntity(coordinator, entry, subentry, d)
-                    for d in ready
-                ],
+                [_user_entity(coordinator, entry, subentry, d) for d in ready],
                 config_subentry_id=subentry_id,
             )
 
@@ -387,6 +501,9 @@ class _AtfleeRestoreSensor(CoordinatorEntity[AtfleeDataUpdateCoordinator], Resto
         """Convert restored state into expected value type for this entity."""
         if value is None:
             return None
+        if self.entity_description.options:
+            # Enum sensors hold a state slug, not a number.
+            return value if value in self.entity_description.options else None
         if isinstance(value, (float, int)):
             if self.entity_description.key in _INT_KEYS:
                 return int(value)
@@ -448,6 +565,70 @@ class AtfleeUserSensorEntity(_AtfleeRestoreSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Attach this user's own packet fields (not the scale-wide ones)."""
         return _measurement_attributes(self._measurement)
+
+
+class AtfleeStatusSensorEntity(AtfleeUserSensorEntity):
+    """Evaluation of one user's metric against a reference range."""
+
+    entity_description: AtfleeStatusSensorDescription
+
+    def _evaluation(self) -> evaluation.Evaluation | None:
+        value = self._current_value()
+        if value is None:
+            return None
+        profile = self.coordinator.body_profile(self._subentry_id)
+        age, male = (None, None) if profile is None else (profile[1], profile[2] == "male")
+        return self.entity_description.evaluate(value, age, male)
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the live verdict; unknown when it cannot be judged (never restored)."""
+        result = self._evaluation()
+        return None if result is None else result.state
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """The judged value and the reference range behind the verdict."""
+        result = self._evaluation()
+        return {
+            "value": self._current_value(),
+            "range_low": result.range_low if result else None,
+            "range_high": result.range_high if result else None,
+            "standard": result.standard if result else None,
+            "disclaimer": evaluation.DISCLAIMER,
+        }
+
+
+class AtfleeProfileSensorEntity(CoordinatorEntity[AtfleeDataUpdateCoordinator], SensorEntity):
+    """One field of a user's profile; a user edit reloads the entry, rebuilding it."""
+
+    _attr_has_entity_name = True
+    entity_description: AtfleeProfileSensorDescription
+
+    def __init__(
+        self,
+        coordinator: AtfleeDataUpdateCoordinator,
+        entry: ConfigEntry,
+        subentry: ConfigSubentry,
+        description: AtfleeProfileSensorDescription,
+    ) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._entry = entry
+        self._subentry_id = subentry.subentry_id
+        self._attr_translation_key = description.key
+        self._attr_unique_id = user_unique_id(
+            entry.data[CONF_ADDRESS], subentry.subentry_id, description.key
+        )
+        self._attr_device_info = user_device_info(entry, subentry)
+
+    @property
+    def native_value(self) -> int | date | str | None:
+        """Return the configured value; unknown when the profile is unusable."""
+        subentry = self._entry.subentries.get(self._subentry_id)
+        if subentry is None:
+            return None
+        return profile_field(subentry.data, self.entity_description.field)
 
 
 class AtfleeScaleSensorEntity(_AtfleeRestoreSensor):

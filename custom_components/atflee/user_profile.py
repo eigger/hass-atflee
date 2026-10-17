@@ -152,6 +152,12 @@ def profile_from_data(data: Mapping[str, Any]) -> UserProfile | None:
     return UserProfile(height_cm=height, birth_date=birth, sex=sex)
 
 
+def profile_field(data: Mapping[str, Any], field: str) -> int | date | str | None:
+    """Return one profile value (height_cm, birth_date or sex), or None if unusable."""
+    profile = profile_from_data(data)
+    return None if profile is None else getattr(profile, field)
+
+
 def user_slot(item: Mapping[str, Any]) -> int:
     try:
         return int(item.get(CONF_SLOT, 0))

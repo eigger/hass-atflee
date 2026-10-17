@@ -93,3 +93,20 @@ def test_options_form_keys_are_translated() -> None:
         init = _load(name)["options"]["step"]["init"]
         assert set(init["data"]) == expected
         assert set(init["data_description"]) <= expected
+
+
+def test_profile_sensor_translations_and_helper():
+    for name in FILES:
+        sensors = _load(name)["entity"]["sensor"]
+        for key in ("profile_height", "profile_birth_date", "profile_sex"):
+            assert sensors[key]["name"]
+        assert set(sensors["profile_sex"]["state"]) == set(const.SEXES)
+    data = {
+        const.CONF_HEIGHT_CM: 170,
+        const.CONF_BIRTH_DATE: "1985-03-07",
+        const.CONF_SEX: "female",
+    }
+    assert up.profile_field(data, "height_cm") == 170
+    assert up.profile_field(data, "birth_date") == date(1985, 3, 7)
+    assert up.profile_field(data, "sex") == "female"
+    assert up.profile_field({}, "sex") is None

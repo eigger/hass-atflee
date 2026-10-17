@@ -139,6 +139,62 @@
       "body_score": {
         "name": "신체 점수"
       },
+      "bmi_status": {
+        "name": "BMI 판정",
+        "state": {
+          "underweight": "저체중",
+          "normal": "정상",
+          "overweight": "과체중",
+          "obese_1": "비만 1단계",
+          "obese_2": "비만 2단계",
+          "obese_3": "비만 3단계"
+        }
+      },
+      "body_fat_status": {
+        "name": "체지방률 판정",
+        "state": {
+          "low": "낮음",
+          "normal": "정상",
+          "high": "높음",
+          "very_high": "매우 높음"
+        }
+      },
+      "visceral_fat_status": {
+        "name": "내장지방 판정",
+        "state": {
+          "normal": "정상",
+          "high": "높음",
+          "very_high": "매우 높음"
+        }
+      },
+      "body_water_status": {
+        "name": "체수분 판정",
+        "state": {
+          "low": "낮음",
+          "normal": "정상",
+          "high": "높음"
+        }
+      },
+      "body_score_status": {
+        "name": "신체 점수 판정",
+        "state": {
+          "balanced": "균형",
+          "unbalanced": "불균형"
+        }
+      },
+      "profile_height": {
+        "name": "키"
+      },
+      "profile_birth_date": {
+        "name": "생년월일"
+      },
+      "profile_sex": {
+        "name": "성별",
+        "state": {
+          "male": "남성",
+          "female": "여성"
+        }
+      },
       "battery": {
         "name": "배터리"
       },

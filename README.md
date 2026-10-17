@@ -107,6 +107,26 @@ The body-composition profile is sent to the scale when it connects, before the w
 - **Weight (kg)** and **Impedance (ohm)** always exist.
 - Everything else is created the first time that user gets a value, so values the scale never delivers do not show up as permanently unknown entities: **BMI**, **Body Fat (%)**, **Muscle Mass (kg) / Muscle (%)**, **Visceral Fat**, **Subcutaneous Fat (%)**, **BMR (kcal)**, **Bone Mass (kg)**, **Body Water (%)**, **Protein (%)**, **Skeletal Muscle (%)**, **Body Age (years)**, **Body Score**, **Heart Rate (bpm)** (if supported by the model) and the derived masses **Body Fat Mass / Fat-Free Mass / Body Water Mass / Protein Mass / Skeletal Muscle Mass (kg)** (calculated from weight and the body fat / body water / protein / skeletal muscle %).
 
+**Status sensors (evaluations)**
+
+For some values an extra sensor gives a plain-language verdict, created together with the value it judges. Their states are fixed slugs (translated in the UI) and each one carries the attributes `value`, `range_low` / `range_high` (the normal band; the upper limit is the first value of the next band, except body water where it is inclusive), `standard` (source and version) and `disclaimer`.
+
+| Sensor | States | Reference |
+|---|---|---|
+| **BMI Status** | underweight (<18.5), normal (18.5-22.9), overweight (23-24.9), obese 1 (25-29.9), obese 2 (30-34.9), obese 3 (35+) | KSSO 2022 Asia-Pacific classes (Haam et al., J Obes Metab Syndr 2023) |
+| **Body Fat Status** | low / normal / high / very high, by sex and age band (20-39, 40-59, 60+; 18-19 use the first, 80+ the last) | Gallagher et al., Am J Clin Nutr 2000;72:694 |
+| **Visceral Fat Status** | normal (1-9), high (10-14), very high (15+) | Omron / InBody level convention. The visceral fat level of this integration is calculated by its own formula whose scale has not been verified against other devices, so treat the verdict as indicative |
+| **Body Water Status** (disabled by default) | low / normal / high; normal is 50-65 % for men and 45-60 % for women | Tanita EU ranges, low confidence |
+| **Body Score Status** (disabled by default) | balanced (80+) / unbalanced | InBody score convention |
+
+Body fat and body water need the user's age and sex; they show unknown when the profile is unusable or the age is outside 18-99. BMI, visceral fat and body score are not judged for ages outside 18-99 when the age is known.
+
+These are estimates from consumer bioimpedance and general reference ranges. They are for information only and are not medical advice; consult a doctor for health decisions.
+
+**Profile (diagnostic)**
+
+Each user device also shows **Height**, **Birth Date** and **Sex** as diagnostic sensors, read from the user's settings (they update after you reconfigure the user and show unknown if the profile is unusable).
+
 **Scale device**
 
 - **Battery (%)**
