@@ -1,0 +1,5 @@
+# Historical support baseline; excluded from automatic dependency updates.
+homeassistant==2025.8.0
+pytest-homeassistant-custom-component==0.13.269
+# aiodns 3.5 uses the pycares 4.x result API.
+pycares==4.11.0

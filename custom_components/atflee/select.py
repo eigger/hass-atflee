@@ -47,7 +47,9 @@ class AtfleeActiveUserSelect(SelectEntity):
     def current_option(self) -> str:
         """Label of the selected user, or "auto"."""
         active = self._coordinator.active_user_id
-        return self._labels.get(active, ACTIVE_USER_AUTO) if active else ACTIVE_USER_AUTO
+        return (
+            self._labels.get(active, ACTIVE_USER_AUTO) if active else ACTIVE_USER_AUTO
+        )
 
     async def async_added_to_hass(self) -> None:
         """Follow selection changes made by the coordinator (session end, timeout)."""

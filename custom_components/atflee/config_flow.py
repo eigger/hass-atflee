@@ -172,23 +172,21 @@ class AtfleeConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="first_user",
-            data_schema=self.add_suggested_values_to_schema(
-                _user_schema(), user_input
-            ),
+            data_schema=self.add_suggested_values_to_schema(_user_schema(), user_input),
             errors=errors,
         )
 
     def _is_atflee_candidate(self, discovery_info: BluetoothServiceInfoBleak) -> bool:
         """Check whether discovered device matches Atflee heuristics."""
         known_services = {service for service, _, _ in GATT_PROFILES}
-        advertised_services = {uuid.lower() for uuid in (discovery_info.service_uuids or [])}
+        advertised_services = {
+            uuid.lower() for uuid in (discovery_info.service_uuids or [])
+        }
         if advertised_services & known_services:
             return True
 
         local_name = (
-            discovery_info.name
-            or discovery_info.advertisement.local_name
-            or ""
+            discovery_info.name or discovery_info.advertisement.local_name or ""
         ).lower()
         return any(
             keyword in local_name
@@ -242,7 +240,10 @@ class AtfleeConfigFlow(ConfigFlow, domain=DOMAIN):
             address = service_info.address
             if address in current_ids or address in self._discovered_devices:
                 continue
-            if service_info.name is None and service_info.advertisement.local_name is None:
+            if (
+                service_info.name is None
+                and service_info.advertisement.local_name is None
+            ):
                 continue
             if not self._is_atflee_candidate(service_info):
                 continue
@@ -259,7 +260,9 @@ class AtfleeConfigFlow(ConfigFlow, domain=DOMAIN):
         }
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema({vol.Required(CONF_ADDRESS): vol.In(options)} | BASE_SCHEMA),
+            data_schema=vol.Schema(
+                {vol.Required(CONF_ADDRESS): vol.In(options)} | BASE_SCHEMA
+            ),
         )
 
     @staticmethod
@@ -373,9 +376,7 @@ class UserSubentryFlow(ConfigSubentryFlow):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=self.add_suggested_values_to_schema(
-                _user_schema(), user_input
-            ),
+            data_schema=self.add_suggested_values_to_schema(_user_schema(), user_input),
             errors=errors,
         )
 

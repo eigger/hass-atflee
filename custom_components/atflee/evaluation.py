@@ -18,9 +18,13 @@ MAX_AGE = 99
 DISCLAIMER = "Estimate for information only, not medical advice."
 
 # Source and version of each reference range, shown as the ``standard`` attribute.
-STANDARD_BMI = "KSSO 2022 (Haam et al., J Obes Metab Syndr 2023), Asia-Pacific BMI classes"
+STANDARD_BMI = (
+    "KSSO 2022 (Haam et al., J Obes Metab Syndr 2023), Asia-Pacific BMI classes"
+)
 STANDARD_BODY_FAT = "Gallagher et al., Am J Clin Nutr 2000;72:694, age-banded"
-STANDARD_VISCERAL_FAT = "Omron/InBody level convention (1-9 normal, 10-14 high, 15+ very high)"
+STANDARD_VISCERAL_FAT = (
+    "Omron/InBody level convention (1-9 normal, 10-14 high, 15+ very high)"
+)
 STANDARD_BODY_WATER = "Tanita EU total body water ranges (low confidence)"
 STANDARD_BODY_SCORE = "InBody score convention (80 and above is balanced)"
 
@@ -75,7 +79,9 @@ def _adult(age: int | None) -> bool:
     return age is not None and MIN_AGE <= age <= MAX_AGE
 
 
-def evaluate_bmi(bmi: float, age: int | None = None, male: bool | None = None) -> Evaluation | None:
+def evaluate_bmi(
+    bmi: float, age: int | None = None, male: bool | None = None
+) -> Evaluation | None:
     """Classify BMI; a known age outside the adult range gives no result."""
     if bmi <= 0 or (age is not None and not _adult(age)):
         return None
@@ -83,7 +89,9 @@ def evaluate_bmi(bmi: float, age: int | None = None, male: bool | None = None) -
     return Evaluation(state, STANDARD_BMI, *BMI_NORMAL)
 
 
-def evaluate_body_fat(pct: float, age: int | None, male: bool | None) -> Evaluation | None:
+def evaluate_body_fat(
+    pct: float, age: int | None, male: bool | None
+) -> Evaluation | None:
     """Classify body fat % against the age and sex band."""
     if pct <= 0 or male is None or not _adult(age):
         return None
@@ -115,7 +123,9 @@ def evaluate_visceral_fat(
     return Evaluation(state, STANDARD_VISCERAL_FAT, 1.0, VISCERAL_HIGH)
 
 
-def evaluate_body_water(pct: float, age: int | None, male: bool | None) -> Evaluation | None:
+def evaluate_body_water(
+    pct: float, age: int | None, male: bool | None
+) -> Evaluation | None:
     """Classify body water % against the sex range."""
     if pct <= 0 or male is None or not _adult(age):
         return None

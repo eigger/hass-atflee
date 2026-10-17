@@ -1,20 +1,10 @@
-"""Tests for the user subentry validation helpers (no Home Assistant)."""
+"""Tests for the user subentry validation helpers."""
 
 from __future__ import annotations
 
 from datetime import date
-import importlib
-from pathlib import Path
-import sys
-import types
 
-# Load the pure modules without running the integration package (it needs Home Assistant).
-_DIR = Path(__file__).parents[1] / "custom_components" / "atflee"
-_PKG = types.ModuleType("atflee_pure")
-_PKG.__path__ = [str(_DIR)]
-sys.modules["atflee_pure"] = _PKG
-
-up = importlib.import_module("atflee_pure.user_profile")
+import custom_components.atflee.user_profile as up
 
 TODAY = date(2026, 10, 17)
 VALID = {
@@ -51,9 +41,27 @@ def test_birth_date_validation() -> None:
 
 def test_birth_date_accepts_common_text_formats() -> None:
     expected = date(1985, 3, 7)
-    for text in ("1985-03-07", "1985-3-7", "1985.3.7", "1985/03/07", "19850307", " 1985-03-07 "):
+    for text in (
+        "1985-03-07",
+        "1985-3-7",
+        "1985.3.7",
+        "1985/03/07",
+        "19850307",
+        " 1985-03-07 ",
+    ):
         assert up.parse_birth_date(text) == expected
-    for text in ("1985-02-30", "85-03-07", "", "1985-13-01", "abc", "1985111", "198537", "1985-3/7", "1985-0307", "1985-03"):
+    for text in (
+        "1985-02-30",
+        "85-03-07",
+        "",
+        "1985-13-01",
+        "abc",
+        "1985111",
+        "198537",
+        "1985-3/7",
+        "1985-0307",
+        "1985-03",
+    ):
         assert up.parse_birth_date(text) is None
 
 
@@ -122,9 +130,19 @@ def test_reload_needed() -> None:
     assert up.reload_needed(users, {"a": ("A", {"height_cm": 171})}, {}, {}, live)
     # The live option alone never reloads, other options do.
     assert not up.reload_needed(
-        users, users, {"enable_body_composition": False}, {"enable_body_composition": True}, live
+        users,
+        users,
+        {"enable_body_composition": False},
+        {"enable_body_composition": True},
+        live,
     )
-    assert up.reload_needed(users, users, {"notify_timeout_seconds": 12}, {"notify_timeout_seconds": 20}, live)
+    assert up.reload_needed(
+        users,
+        users,
+        {"notify_timeout_seconds": 12},
+        {"notify_timeout_seconds": 20},
+        live,
+    )
     assert up.reload_needed(users, users, {}, {"notify_timeout_seconds": 20}, live)
 
 
@@ -141,7 +159,9 @@ def test_option_labels_are_unique_and_in_slot_order() -> None:
     assert list(labels) == ["a", "b", "c"]
     assert list(labels.values()) == ["Alice", "Bob", "Bob (2)"]
     # A user called "auto" must not shadow the auto option.
-    assert up.user_option_labels({"x": {"name": "auto", "slot": 1}}) == {"x": "auto (2)"}
+    assert up.user_option_labels({"x": {"name": "auto", "slot": 1}}) == {
+        "x": "auto (2)"
+    }
     assert up.user_option_labels({}) == {}
 
 
@@ -182,4 +202,6 @@ def test_reload_needed_with_default_user_live() -> None:
     live = ("enable_body_composition", "default_user")
     assert not up.reload_needed(users, users, {}, {"default_user": "a"}, live)
     assert not up.reload_needed(users, users, {"default_user": "a"}, {}, live)
-    assert up.reload_needed(users, users, {}, {"default_user": "a"}, ("enable_body_composition",))
+    assert up.reload_needed(
+        users, users, {}, {"default_user": "a"}, ("enable_body_composition",)
+    )

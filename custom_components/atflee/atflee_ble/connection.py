@@ -58,7 +58,9 @@ class AtfleeBleClient:
         self._notify_char_uuid: str | None = None
         self._write_char_uuid: str | None = None
         self._extra_notify_char_uuids: list[str] = []
-        self._packet_queue: Queue[tuple[bytes, AtfleeMessage | None]] = Queue(maxsize=30)
+        self._packet_queue: Queue[tuple[bytes, AtfleeMessage | None]] = Queue(
+            maxsize=30
+        )
         self._last_notify_packet: bytes | None = None
         self._assemblers: dict[str, FrameAssembler] = {}
         self._out_pkg_index = 0
@@ -100,13 +102,14 @@ class AtfleeBleClient:
                 try:
                     data = await wait_for(client.read_gatt_char(char.uuid), timeout=2.0)
                     _LOGGER.debug(
-                        "Atflee readable probe: char=%s len=%d hex=%s",
-                        char.uuid,
-                        len(data),
-                        data.hex(),
+                        "Atflee readable probe: char=%s bytes=%d", char.uuid, len(data)
                     )
                 except Exception as err:  # noqa: BLE001
-                    _LOGGER.debug("Atflee readable probe failed: char=%s err=%s", char.uuid, err)
+                    _LOGGER.debug(
+                        "Atflee readable probe failed: char=%s err=%s",
+                        char.uuid,
+                        type(err).__name__,
+                    )
 
     async def _debug_probe_known_read_uuids(
         self, client: BleakClientWithServiceCache, char_uuids: tuple[str, ...]
@@ -116,13 +119,14 @@ class AtfleeBleClient:
             try:
                 data = await wait_for(client.read_gatt_char(char_uuid), timeout=2.0)
                 _LOGGER.debug(
-                    "Atflee known read probe: char=%s len=%d hex=%s",
-                    char_uuid,
-                    len(data),
-                    data.hex(),
+                    "Atflee known read probe: char=%s bytes=%d", char_uuid, len(data)
                 )
             except Exception as err:  # noqa: BLE001
-                _LOGGER.debug("Atflee known read probe failed: char=%s err=%s", char_uuid, err)
+                _LOGGER.debug(
+                    "Atflee known read probe failed: char=%s err=%s",
+                    char_uuid,
+                    type(err).__name__,
+                )
 
     @property
     def is_connected(self) -> bool:
@@ -132,14 +136,15 @@ class AtfleeBleClient:
     def _notification_handler(self, sender: object, data: bytearray) -> None:
         packet = bytes(data)
         source = getattr(sender, "uuid", str(sender))
-        _LOGGER.debug(
-            "Atflee notify received: source=%s len=%d hex=%s",
-            source,
-            len(data),
-            packet.hex(),
-        )
-        if self._last_notify_packet is not None and len(self._last_notify_packet) == len(packet):
-            changed = [idx for idx, (a, b) in enumerate(zip(self._last_notify_packet, packet)) if a != b]
+        _LOGGER.debug("Atflee notification received: bytes=%d", len(packet))
+        if self._last_notify_packet is not None and len(
+            self._last_notify_packet
+        ) == len(packet):
+            changed = [
+                idx
+                for idx, (a, b) in enumerate(zip(self._last_notify_packet, packet))
+                if a != b
+            ]
             if changed:
                 preview = ",".join(str(i) for i in changed[:12])
                 _LOGGER.debug(
@@ -155,7 +160,7 @@ class AtfleeBleClient:
             if packet[2] != 0:
                 # Continuation frame without a complete message (lost first
                 # frame or middle frame): never feed it to the per-frame parser.
-                _LOGGER.debug("Atflee continuation frame dropped: hex=%s", packet.hex())
+                _LOGGER.debug("Atflee continuation frame dropped")
                 return
             if packet[3] in ACKED_COMMANDS:
                 # First frame of a multi-frame message: wait for the rest.
@@ -198,15 +203,11 @@ class AtfleeBleClient:
                 client = await establish_connection(
                     client_class=BleakClientWithServiceCache,
                     device=ble_device,
-                    name=f"atflee-{self._address}",
+                    name="Atflee scale",
                     disconnected_callback=None,
                     use_services_cache=True,
                 )
-                _LOGGER.debug(
-                    "Atflee connected: address=%s services=%d",
-                    self._address,
-                    len(client.services.services) if client.services else -1,
-                )
+                _LOGGER.debug("Atflee connected")
                 await self._debug_dump_gatt_map(client)
                 await self._debug_probe_readable_chars(client, service_uuid)
                 await self._debug_probe_known_read_uuids(client, DEBUG_READ_UUIDS)
@@ -220,22 +221,25 @@ class AtfleeBleClient:
                     write_char = client.services.get_characteristic(write_char_uuid)
                     notify_props = list(notify_char.properties) if notify_char else []
                     write_props = list(write_char.properties) if write_char else []
-                    if not _is_notify_like(notify_props) and _is_notify_like(write_props):
+                    if not _is_notify_like(notify_props) and _is_notify_like(
+                        write_props
+                    ):
                         _LOGGER.debug(
-                            (
-                                "Atflee profile auto-swap applied: "
-                                "notify %s<->%s write"
-                            ),
+                            ("Atflee profile auto-swap applied: notify %s<->%s write"),
                             notify_char_uuid,
                             write_char_uuid,
                         )
                         resolved_notify_uuid = write_char_uuid
                         resolved_write_uuid = notify_char_uuid
 
-                await client.start_notify(resolved_notify_uuid, self._notification_handler)
+                await client.start_notify(
+                    resolved_notify_uuid, self._notification_handler
+                )
                 notify_char = None
                 if client.services:
-                    notify_char = client.services.get_characteristic(resolved_notify_uuid)
+                    notify_char = client.services.get_characteristic(
+                        resolved_notify_uuid
+                    )
                 _LOGGER.debug(
                     "Atflee notify started: char=%s properties=%s",
                     resolved_notify_uuid,
@@ -258,7 +262,9 @@ class AtfleeBleClient:
                     ):
                         continue
                     try:
-                        await client.start_notify(optional_uuid, self._notification_handler)
+                        await client.start_notify(
+                            optional_uuid, self._notification_handler
+                        )
                         self._extra_notify_char_uuids.append(optional_uuid)
                         _LOGGER.debug(
                             "Atflee extra notify started: char=%s properties=%s",
@@ -269,18 +275,22 @@ class AtfleeBleClient:
                         _LOGGER.debug(
                             "Atflee extra notify failed: char=%s err=%s",
                             optional_uuid,
-                            err,
+                            type(err).__name__,
                         )
                 self._client = client
                 self._notify_char_uuid = resolved_notify_uuid
                 self._write_char_uuid = resolved_write_uuid
                 self._last_notify_packet = None
                 return (service_uuid, resolved_notify_uuid, resolved_write_uuid)
+            except asyncio.CancelledError:
+                if client is not None and client.is_connected:
+                    await self._safe_call(client.disconnect(), "cancelled profile")
+                raise
             except Exception as err:  # noqa: BLE001
                 last_error = err
-                _LOGGER.debug("GATT profile failed: %s", err)
+                _LOGGER.debug("GATT profile failed: %s", type(err).__name__)
                 if client is not None and client.is_connected:
-                    await client.disconnect()
+                    await self._safe_call(client.disconnect(), "failed profile")
                 continue
 
         if last_error is None:
@@ -294,13 +304,10 @@ class AtfleeBleClient:
             timeout_seconds,
             self._packet_queue.qsize(),
         )
-        packet, message = await wait_for(self._packet_queue.get(), timeout=timeout_seconds)
-        _LOGGER.debug(
-            "Atflee packet dequeued: len=%d hex=%s queue_size_after=%d",
-            len(packet),
-            packet.hex(),
-            self._packet_queue.qsize(),
+        packet, message = await wait_for(
+            self._packet_queue.get(), timeout=timeout_seconds
         )
+        _LOGGER.debug("Atflee packet dequeued")
         if message is not None:
             if message.command == CMD_DEVICE_INFO:
                 info = parse_device_info(message.data)
@@ -335,10 +342,14 @@ class AtfleeBleClient:
                 )
             except Exception as err:  # noqa: BLE001
                 definitive = False
-                _LOGGER.debug("Atflee device info read failed: char=%s err=%s", char_uuid, err)
+                _LOGGER.debug(
+                    "Atflee device info read failed: char=%s err=%s",
+                    char_uuid,
+                    type(err).__name__,
+                )
                 continue
             _LOGGER.debug(
-                "Atflee device info read: char=%s hex=%s", char_uuid, bytes(raw).hex()
+                "Atflee device info read: char=%s bytes=%d", char_uuid, len(raw)
             )
             if (text := decode_gatt_string(raw)) is not None:
                 values[name] = text
@@ -365,20 +376,32 @@ class AtfleeBleClient:
         if not self._write_char_uuid:
             _LOGGER.debug("Atflee write failed: no write characteristic discovered")
             return False
-            
+
         try:
-            _LOGGER.debug("Atflee sending user info packet: len=%d hex=%s to %s", len(packet), packet.hex(), self._write_char_uuid)
-            await self._client.write_gatt_char(self._write_char_uuid, packet, response=True)
+            _LOGGER.debug(
+                "Atflee write: bytes=%d char=%s", len(packet), self._write_char_uuid
+            )
+            await self._client.write_gatt_char(
+                self._write_char_uuid, packet, response=True
+            )
             return True
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Atflee write failed: char=%s err=%s", self._write_char_uuid, err)
+            _LOGGER.debug(
+                "Atflee write failed: char=%s err=%s",
+                self._write_char_uuid,
+                type(err).__name__,
+            )
             # Some devices don't support write with response, retry without response
             try:
                 _LOGGER.debug("Atflee retrying without response...")
-                await self._client.write_gatt_char(self._write_char_uuid, packet, response=False)
+                await self._client.write_gatt_char(
+                    self._write_char_uuid, packet, response=False
+                )
                 return True
             except Exception as err2:  # noqa: BLE001
-                _LOGGER.debug("Atflee write without response failed: err=%s", err2)
+                _LOGGER.debug(
+                    "Atflee write without response failed: err=%s", type(err2).__name__
+                )
                 return False
 
     async def disconnect(self) -> None:
@@ -404,9 +427,7 @@ class AtfleeBleClient:
                         f"stop_notify_extra({char_uuid})",
                     )
             if self._client.is_connected:
-                await self._safe_call(
-                    self._client.disconnect(), f"disconnect({self._address})"
-                )
+                await self._safe_call(self._client.disconnect(), "disconnect")
         finally:
             self._client = None
             self._notify_char_uuid = None
@@ -423,7 +444,7 @@ class AtfleeBleClient:
         except asyncio.TimeoutError:
             _LOGGER.debug("Atflee cleanup timed out: %s", label)
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Atflee cleanup failed: %s err=%s", label, err)
+            _LOGGER.debug("Atflee cleanup failed: %s err=%s", label, type(err).__name__)
 
     def last_service_info(self) -> BluetoothServiceInfoBleak | None:
         """Return latest discovery info for diagnostics."""

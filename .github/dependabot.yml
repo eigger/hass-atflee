@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /
+    # Historical minimum HA requirements remain an exact compatibility contract.
+    exclude-paths:
+      - requirements_test_min.txt
+      - constraints/**
+    schedule:
+      interval: weekly
+    groups:
+      home-assistant-tests:
+        patterns:
+          - homeassistant
+          - pytest-homeassistant-custom-component

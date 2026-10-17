@@ -1,20 +1,10 @@
-"""Tests for the device registry version helpers (no Home Assistant)."""
+"""Tests for the device registry version helpers."""
 
 from __future__ import annotations
 
-import importlib
-from pathlib import Path
-import sys
-import types
 from typing import TypedDict
 
-# Load the pure modules without running the integration package (it needs Home Assistant).
-_DIR = Path(__file__).parents[1] / "custom_components" / "atflee"
-_PKG = types.ModuleType("atflee_pure_rc")
-_PKG.__path__ = [str(_DIR)]
-sys.modules["atflee_pure_rc"] = _PKG
-
-rc = importlib.import_module("atflee_pure_rc.registry_compat")
+import custom_components.atflee.registry_compat as rc
 
 SCALE = ("atflee", "AA:BB:CC:DD:EE:FF")
 

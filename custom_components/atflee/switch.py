@@ -35,7 +35,9 @@ class AtfleeBodyCompSwitch(SwitchEntity):
     _attr_translation_key = "enable_body_comp"
     _attr_icon = "mdi:human-pregnant"  # Or something related to body composition
 
-    def __init__(self, coordinator: AtfleeDataUpdateCoordinator, entry: ConfigEntry) -> None:
+    def __init__(
+        self, coordinator: AtfleeDataUpdateCoordinator, entry: ConfigEntry
+    ) -> None:
         self._coordinator = coordinator
         self._entry = entry
         address = entry.data[CONF_ADDRESS]

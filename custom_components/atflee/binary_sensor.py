@@ -43,7 +43,9 @@ class AtfleeConnectionBinarySensor(
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     entity_description = CONNECTION_SENSOR
 
-    def __init__(self, coordinator: AtfleeDataUpdateCoordinator, entry: ConfigEntry) -> None:
+    def __init__(
+        self, coordinator: AtfleeDataUpdateCoordinator, entry: ConfigEntry
+    ) -> None:
         super().__init__(coordinator)
         address = entry.data[CONF_ADDRESS]
         self._attr_unique_id = f"{address}_ble_connection"

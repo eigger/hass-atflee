@@ -1,20 +1,16 @@
-"""Boundary tests for the body metric evaluations (no Home Assistant)."""
+"""Boundary tests for the body metric evaluations."""
 
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
-import sys
-import types
+
 
 import pytest
 
-_DIR = Path(__file__).parents[1] / "custom_components" / "atflee"
-_PKG = types.ModuleType("atflee_pure_ev")
-_PKG.__path__ = [str(_DIR)]
-sys.modules["atflee_pure_ev"] = _PKG
+import custom_components.atflee.evaluation as ev
 
-ev = importlib.import_module("atflee_pure_ev.evaluation")
+
+_DIR = Path(__file__).parents[3] / "custom_components" / "atflee"
 
 
 def _state(result):
@@ -140,9 +136,15 @@ def test_body_score_boundaries() -> None:
 def test_every_state_is_listed_and_documented() -> None:
     cases = [
         (ev.BMI_STATES, [ev.evaluate_bmi(v) for v in (17, 20, 24, 27, 32, 40)]),
-        (ev.BODY_FAT_STATES, [ev.evaluate_body_fat(v, 30, True) for v in (5, 15, 22, 30)]),
+        (
+            ev.BODY_FAT_STATES,
+            [ev.evaluate_body_fat(v, 30, True) for v in (5, 15, 22, 30)],
+        ),
         (ev.VISCERAL_FAT_STATES, [ev.evaluate_visceral_fat(v) for v in (5, 12, 20)]),
-        (ev.BODY_WATER_STATES, [ev.evaluate_body_water(v, 30, True) for v in (40, 55, 70)]),
+        (
+            ev.BODY_WATER_STATES,
+            [ev.evaluate_body_water(v, 30, True) for v in (40, 55, 70)],
+        ),
         (ev.BODY_SCORE_STATES, [ev.evaluate_body_score(v) for v in (50, 90)]),
     ]
     for options, results in cases:
@@ -161,6 +163,8 @@ def test_state_translations_match_options() -> None:
         "body_score_status": ev.BODY_SCORE_STATES,
     }
     for path in ("strings.json", "translations/en.json", "translations/ko.json"):
-        sensors = json.loads((_DIR / path).read_text(encoding="utf-8"))["entity"]["sensor"]
+        sensors = json.loads((_DIR / path).read_text(encoding="utf-8"))["entity"][
+            "sensor"
+        ]
         for key, options in expected.items():
             assert list(sensors[key]["state"]) == options, (path, key)

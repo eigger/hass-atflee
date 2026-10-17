@@ -30,7 +30,9 @@ def via_device_fields(
     return {"via_device": identifier}
 
 
-def find_device(registry: Any, identifier: tuple[str, str], config_entry_id: str) -> Any:
+def find_device(
+    registry: Any, identifier: tuple[str, str], config_entry_id: str
+) -> Any:
     """Return the device of this config entry with the given identifier."""
     lookup = getattr(registry, "async_get_device_by_identifier", None)
     if lookup is not None:

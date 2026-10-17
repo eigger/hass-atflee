@@ -1,0 +1,21 @@
+# Shared standards; upstream action SHAs verified 2026-10-17.
+name: Update dependencies
+'on':
+  schedule:
+  - cron: 41 4 * * 1
+  workflow_dispatch: null
+permissions:
+  contents: read
+jobs:
+  dependencies:
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: eigger/hass-repo-standards/.github/workflows/dependency-update.yml@ff46b0c8d9ba53b1d35ab9a4aa38f4db26c06870 # reviewed standards commit
+    with:
+      domain: atflee
+      packages: '["blesession"]'
+      python-version: '3.14'
+      ha-components: bluetooth recorder sensor binary_sensor select switch
+      test-profile: ha
+      validation-command: python -m ruff check . && python -m pytest tests/components/atflee/ -v

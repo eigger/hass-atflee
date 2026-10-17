@@ -46,46 +46,57 @@ LIVE_OPTION_KEYS = (
 async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bool:
     """Set up Atflee from a config entry."""
     coordinator = AtfleeDataUpdateCoordinator(hass, entry)
-    await coordinator.async_load_last_weights()
-    await coordinator.async_start()
-    # Registered right after start so the BLE callbacks are released on every
-    # exit path, including a failed first refresh (ConfigEntryNotReady retries).
+    # Register cleanup before acquiring callbacks, including partial startup.
     entry.async_on_unload(coordinator.async_stop)
-    await coordinator.async_config_entry_first_refresh()
-    if coordinator.last_update_success is False:
-        raise ConfigEntryNotReady("Initial BLE update failed")
+    forwarding_started = False
+    try:
+        await coordinator.async_load_last_weights()
+        await coordinator.async_start()
+        await coordinator.async_config_entry_first_refresh()
+        if coordinator.last_update_success is False:
+            raise ConfigEntryNotReady("Initial BLE update failed")
 
-    entry.runtime_data = coordinator
+        entry.runtime_data = coordinator
 
-    # User devices point at the scale device by its registry id, so make sure
-    # it exists before any platform adds entities.
-    scale_device = dr.async_get(hass).async_get_or_create(
-        config_entry_id=entry.entry_id, **scale_device_info(entry)
-    )
-    coordinator.scale_device_id = scale_device.id
+        # User devices point at the scale device by its registry id, so make sure
+        # it exists before any platform adds entities.
+        scale_device = dr.async_get(hass).async_get_or_create(
+            config_entry_id=entry.entry_id, **scale_device_info(entry)
+        )
+        coordinator.scale_device_id = scale_device.id
 
-    # Entities are created per user subentry, so adding, removing or editing a
-    # user needs a reload, as does any option except the body composition
-    # switch, the default user and the identification thresholds, which the
-    # coordinator reads live.
-    users = _users_snapshot(coordinator)
-    options = dict(entry.options)
+        # Entities are created per user subentry, so adding, removing or editing a
+        # user needs a reload, as does any option except the body composition
+        # switch, the default user and the identification thresholds, which the
+        # coordinator reads live.
+        users = _users_snapshot(coordinator)
+        options = {**entry.data, **entry.options}
 
-    async def _async_entry_updated(hass: HomeAssistant, entry: AtfleeConfigEntry) -> None:
-        if reload_needed(
-            users,
-            _users_snapshot(entry.runtime_data),
-            options,
-            entry.options,
-            LIVE_OPTION_KEYS,
-        ):
-            await hass.config_entries.async_reload(entry.entry_id)
+        async def _async_entry_updated(
+            hass: HomeAssistant, entry: AtfleeConfigEntry
+        ) -> None:
+            if reload_needed(
+                users,
+                _users_snapshot(entry.runtime_data),
+                options,
+                {**entry.data, **entry.options},
+                LIVE_OPTION_KEYS,
+            ):
+                await hass.config_entries.async_reload(entry.entry_id)
 
-    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+        forwarding_started = True
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+        _LOGGER.debug("Atflee entry setup complete: %s", entry.entry_id)
+        return True
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    _LOGGER.debug("Atflee entry setup complete: %s", entry.entry_id)
-    return True
+    except BaseException:
+        try:
+            if forwarding_started:
+                await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+        finally:
+            await coordinator.async_stop()
+        raise
 
 
 def _users_snapshot(coordinator: AtfleeDataUpdateCoordinator) -> dict[str, tuple]:

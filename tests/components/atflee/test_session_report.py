@@ -1,18 +1,11 @@
-"""Tests for the session report helpers (no Home Assistant required)."""
+"""Tests for the session report helpers."""
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 
 from blesession import SessionReports, fallback_report, stages
 
-_SPEC = importlib.util.spec_from_file_location(
-    "atflee_session_report",
-    Path(__file__).parents[1] / "custom_components" / "atflee" / "session_report.py",
-)
-session_report = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(session_report)
+from custom_components.atflee import session_report
 
 
 def test_stage_map_uses_shared_stages() -> None:
@@ -26,8 +19,12 @@ def test_scale_cause_per_stage() -> None:
     cause = session_report.scale_cause
     assert "link could not be established" in cause(stages.CONNECT, None, "boom", {})
     assert cause(stages.CONNECT, None, "no free slot", {}) is None
-    assert "preparing the measurement" in cause(stages.SESSION, session_report.ARM, "x", {})
-    assert "measurement packet" in cause(stages.TRANSFER, session_report.MEASURE, "x", {})
+    assert "preparing the measurement" in cause(
+        stages.SESSION, session_report.ARM, "x", {}
+    )
+    assert "measurement packet" in cause(
+        stages.TRANSFER, session_report.MEASURE, "x", {}
+    )
     assert cause(None, None, "x", {}) is None
 
 

@@ -1,21 +1,15 @@
-"""Translation parity and form-error coverage (no Home Assistant)."""
+"""Translation parity and form-error coverage."""
 
 from __future__ import annotations
 
 from datetime import date
-import importlib
 import json
 from pathlib import Path
-import sys
-import types
 
-_DIR = Path(__file__).parents[1] / "custom_components" / "atflee"
-_PKG = types.ModuleType("atflee_pure_tr")
-_PKG.__path__ = [str(_DIR)]
-sys.modules["atflee_pure_tr"] = _PKG
+import custom_components.atflee.user_profile as up
+import custom_components.atflee.const as const
 
-up = importlib.import_module("atflee_pure_tr.user_profile")
-const = importlib.import_module("atflee_pure_tr.const")
+_DIR = Path(__file__).parents[3] / "custom_components" / "atflee"
 
 FILES = {
     "strings": _DIR / "strings.json",
@@ -70,7 +64,9 @@ def test_validation_errors_are_translated() -> None:
         for data in bad_inputs
         for error in up.validate_user_input(data, today).values()
     }
-    produced |= set(up.validate_user_input(valid, today, existing_names={"alice"}).values())
+    produced |= set(
+        up.validate_user_input(valid, today, existing_names={"alice"}).values()
+    )
     assert {"name_required", "invalid_height", "invalid_birth_date"} <= produced
     for name in FILES:
         data = _load(name)

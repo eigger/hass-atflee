@@ -1,23 +1,11 @@
-"""Tests for per-user measurement merging, state building and id helpers (no Home Assistant)."""
+"""Tests for per-user measurement merging, state building and id helpers."""
 
 from __future__ import annotations
 
 from datetime import datetime
-import importlib
-from pathlib import Path
-import sys
-import types
 
-_DIR = Path(__file__).parents[1] / "custom_components" / "atflee"
-_PKG = types.ModuleType("atflee_pure")
-_PKG.__path__ = [str(_DIR)]
-sys.modules["atflee_pure"] = _PKG
-_BLE = types.ModuleType("atflee_pure.atflee_ble")
-_BLE.__path__ = [str(_DIR / "atflee_ble")]
-sys.modules["atflee_pure.atflee_ble"] = _BLE
-
-models = importlib.import_module("atflee_pure.atflee_ble.models")
-up = importlib.import_module("atflee_pure.user_profile")
+import custom_components.atflee.atflee_ble.models as models
+import custom_components.atflee.user_profile as up
 
 AtfleeMeasurement = models.AtfleeMeasurement
 NOW = datetime(2026, 10, 17, 12, 0, 0)
@@ -117,8 +105,11 @@ def test_state_without_user_only_updates_scale_level() -> None:
 
 
 def test_state_keeps_battery_when_packet_has_none() -> None:
-    state = _state(_state(None, AtfleeMeasurement(battery_pct=70), "u1"),
-                   AtfleeMeasurement(weight_kg=70.0), "u1")
+    state = _state(
+        _state(None, AtfleeMeasurement(battery_pct=70), "u1"),
+        AtfleeMeasurement(weight_kg=70.0),
+        "u1",
+    )
     assert state.battery_pct == 70
 
 
@@ -147,4 +138,6 @@ def test_unique_id_and_device_identifier() -> None:
     assert up.user_unique_id("AA:BB", "sub1", "weight") == "AA:BB_sub1_weight"
     assert up.user_device_identifier("AA:BB", "sub1") == "AA:BB_sub1"
     # The two users of one scale never collide.
-    assert up.user_unique_id("AA:BB", "s1", "bmi") != up.user_unique_id("AA:BB", "s2", "bmi")
+    assert up.user_unique_id("AA:BB", "s1", "bmi") != up.user_unique_id(
+        "AA:BB", "s2", "bmi"
+    )

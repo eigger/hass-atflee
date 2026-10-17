@@ -1,29 +1,20 @@
-"""Readable status code states and their translations (no Home Assistant)."""
+"""Readable status code states and their translations."""
 
 from __future__ import annotations
 
-import importlib
-import json
 from pathlib import Path
-import sys
-import types
+
+import json
 
 import pytest
 
-_DIR = Path(__file__).parents[1] / "custom_components" / "atflee"
-_PKG = types.ModuleType("atflee_pure_sc")
-_PKG.__path__ = [str(_DIR)]
-sys.modules["atflee_pure_sc"] = _PKG
-
-# Load atflee_ble without running either package's __init__.
-_BLE = types.ModuleType("atflee_pure_sc_ble")
-_BLE.__path__ = [str(_DIR / "atflee_ble")]
-sys.modules["atflee_pure_sc_ble"] = _BLE
-
-sc = importlib.import_module("atflee_pure_sc.status_codes")
-protocol = importlib.import_module("atflee_pure_sc_ble.protocol")
+import custom_components.atflee.status_codes as sc
+import custom_components.atflee.atflee_ble.protocol as protocol
 
 STATES = sc.MEASURE_STATUS_STATES
+
+
+_DIR = Path(__file__).parents[3] / "custom_components" / "atflee"
 
 
 def test_options_end_with_other() -> None:

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 
 FRAME_HEADER = b"\x55\x55"
-FRAME_TAIL = b"\xAA\xAA"
+FRAME_TAIL = b"\xaa\xaa"
 
 # Atflee BLE wire layout (one 20-byte frame, both directions):
 #   byte 0:      package index (rolling counter chosen by the sender)

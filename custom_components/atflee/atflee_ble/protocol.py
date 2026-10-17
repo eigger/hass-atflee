@@ -41,18 +41,16 @@ def parse_measurement_packet(payload: bytes, kg_division: int = 0) -> AtfleeMeas
         # Prefer extracted payload body from framed packets.
         framed_payload = frame.payload
         _LOGGER.debug(
-            "Atflee frame parsed: cmd=0x%02X payload_len=%d checksum=%s valid=%s raw=%s",
+            "Atflee frame parsed: cmd=0x%02X payload_len=%d checksum=%s valid=%s",
             frame.command,
             len(frame.payload),
             f"0x{frame.checksum:04X}" if frame.checksum is not None else None,
             frame.is_valid,
-            payload.hex(),
         )
     else:
         _LOGGER.debug(
-            "Atflee frame parse miss: raw_len=%d raw=%s",
+            "Atflee frame parse miss: raw_len=%d",
             len(payload),
-            payload.hex(),
         )
 
     raw_hex = payload.hex()
@@ -131,7 +129,9 @@ def parse_measurement_packet(payload: bytes, kg_division: int = 0) -> AtfleeMeas
                 end = start + 3
                 if len(framed_payload) < end:
                     continue
-                raw = int.from_bytes(framed_payload[start:end], byteorder="big", signed=False)
+                raw = int.from_bytes(
+                    framed_payload[start:end], byteorder="big", signed=False
+                )
                 kg = raw / 1000.0
                 weight_candidates.append((start, raw, kg))
 
@@ -151,27 +151,18 @@ def parse_measurement_packet(payload: bytes, kg_division: int = 0) -> AtfleeMeas
             packet_seq = framed_payload[0] if len(framed_payload) > 0 else None
             packet_tail = framed_payload[19] if len(framed_payload) > 19 else None
             extended_slice = (
-                framed_payload[9:19] if len(framed_payload) >= 19 else framed_payload[9:]
+                framed_payload[9:19]
+                if len(framed_payload) >= 19
+                else framed_payload[9:]
             )
-            extended_non_zero = [idx + 9 for idx, value in enumerate(extended_slice) if value != 0]
-            _LOGGER.debug(
-                (
-                    "Atflee A2/A3 packet parsed: cmd=0x%02X seq=%s raw3b=%d "
-                    "weight=%.2f weight_offset=%s tail=%s ext_nonzero_idx=%s payload=%s"
-                ),
-                cmd,
-                packet_seq,
-                weight_raw_3b,
-                weight_kg_3b,
-                chosen_start,
-                packet_tail,
-                ",".join(str(i) for i in extended_non_zero) if extended_non_zero else "none",
-                framed_payload.hex(),
-            )
+            extended_non_zero = [
+                idx + 9 for idx, value in enumerate(extended_slice) if value != 0
+            ]
+            _LOGGER.debug("Atflee A2/A3 packet parsed")
             if extended_non_zero:
                 _LOGGER.debug(
-                    "Atflee A2/A3 extended bytes (possible extra sensors): hex=%s",
-                    extended_slice.hex(),
+                    "Atflee A2/A3 extended payload length=%d",
+                    len(extended_slice),
                 )
             if 10.0 <= weight_kg_3b <= 300.0:
                 parsed.weight_kg = round(weight_kg_3b, 2)
@@ -181,7 +172,9 @@ def parse_measurement_packet(payload: bytes, kg_division: int = 0) -> AtfleeMeas
                 parsed.packet_command = cmd
                 parsed.packet_sequence = packet_seq
                 parsed.packet_tail = packet_tail
-                parsed.extended_payload_hex = extended_slice.hex() if extended_slice else None
+                parsed.extended_payload_hex = (
+                    extended_slice.hex() if extended_slice else None
+                )
 
                 # Some firmware variants ship impedance bytes inside the A3
                 # (stable weight) tail. Surface them so the body composition
@@ -199,22 +192,15 @@ def parse_measurement_packet(payload: bytes, kg_division: int = 0) -> AtfleeMeas
             framed_payload[0:2], byteorder="little", signed=False
         )
         weight_kg = weight_raw / 10.0
-        weight_kg_div100 = weight_raw / 100.0
-        _LOGGER.debug(
-            "Atflee fallback weight candidates: raw=%d /10=%.2f /100=%.2f payload=%s",
-            weight_raw,
-            weight_kg,
-            weight_kg_div100,
-            framed_payload.hex(),
-        )
+        weight_raw / 100.0
+        _LOGGER.debug("Atflee BLE packet processed")
         if 10.0 <= weight_kg <= 300.0:
             parsed.weight_kg = weight_kg
             parsed.measure_state = "weight"
     elif len(framed_payload) > 4:
         _LOGGER.debug(
-            "Atflee fallback skipped for long payload len=%d payload=%s",
+            "Atflee fallback skipped for long payload len=%d",
             len(framed_payload),
-            framed_payload.hex(),
         )
 
     if parsed.body_fat_pct is not None or parsed.impedance_ohm is not None:
@@ -244,7 +230,9 @@ def _fill_from_mapping(measurement: AtfleeMeasurement, source: dict[str, Any]) -
         _pick(source, "body_fat", "bodyFat", "fat", "fat_pct", "pbf", "fatRate", "bfr")
     )
     measurement.bmi = _to_float(_pick(source, "bmi"))
-    measurement.impedance_ohm = _to_int(_pick(source, "impedance", "z", "impedance_ohm"))
+    measurement.impedance_ohm = _to_int(
+        _pick(source, "impedance", "z", "impedance_ohm")
+    )
 
     # --- 확장 체성분 ---
     measurement.subcutaneous_fat_pct = _to_float(
@@ -256,13 +244,9 @@ def _fill_from_mapping(measurement: AtfleeMeasurement, source: dict[str, Any]) -
     measurement.muscle_pct = _to_float(
         _pick(source, "muscle", "musclePercent", "muscle_pct")
     )
-    measurement.muscle_mass = _to_float(
-        _pick(source, "muscleMass", "muscle_mass")
-    )
+    measurement.muscle_mass = _to_float(_pick(source, "muscleMass", "muscle_mass"))
     measurement.bmr = _to_int(_pick(source, "bmr"))
-    measurement.bone_mass = _to_float(
-        _pick(source, "bone", "boneMass", "bone_mass")
-    )
+    measurement.bone_mass = _to_float(_pick(source, "bone", "boneMass", "bone_mass"))
     measurement.moisture_pct = _to_float(
         _pick(source, "moisture", "moisturePercent", "water", "moisture_pct")
     )
@@ -278,9 +262,13 @@ def _fill_from_mapping(measurement: AtfleeMeasurement, source: dict[str, Any]) -
     measurement.body_score = _to_float(_pick(source, "bodyScore", "body_score"))
 
     # --- 기기 상태 ---
-    measurement.battery_pct = _to_int(_pick(source, "battery", "batteryLevel", "battery_pct"))
+    measurement.battery_pct = _to_int(
+        _pick(source, "battery", "batteryLevel", "battery_pct")
+    )
     measurement.verify_status = _to_int(_pick(source, "verifyStatus"))
-    measurement.measure_status = _to_int(_pick(source, "measure_status", "measureState"))
+    measurement.measure_status = _to_int(
+        _pick(source, "measure_status", "measureState")
+    )
     measurement.scale_status = _to_int(_pick(source, "scale_status"))
     measurement.heart_rate = _to_int(_pick(source, "heart_rate"))
     measurement.support_upload_bodyfat = _to_bool(
@@ -321,7 +309,8 @@ def _apply_status_heuristics(measurement: AtfleeMeasurement) -> None:
     if measurement.is_stable is None:
         # Most devices report stable after verify/body-composition stages.
         measurement.is_stable = measurement.verify_status in (1, 2) or bool(
-            measurement.body_fat_pct is not None or measurement.impedance_ohm is not None
+            measurement.body_fat_pct is not None
+            or measurement.impedance_ohm is not None
         )
     if not measurement.is_body_composition_complete:
         measurement.is_body_composition_complete = measurement.verify_status in (1, 2)
@@ -402,7 +391,6 @@ def build_reply_frames(
         bytes([reply_index & 0xFF, state & 0xFF]),
         pkg_index=pkg_index,
     )
-
 
 
 # Weight word shared by A2/A3/A5/A7 packets (big-endian 32-bit):
@@ -661,7 +649,9 @@ def _mark_control_packet(framed_payload: bytes, parsed: AtfleeMeasurement) -> No
     parsed.extended_payload_hex = framed_payload[4:19].hex()
 
 
-def _decode_body_composition_result(framed_payload: bytes, parsed: AtfleeMeasurement) -> None:
+def _decode_body_composition_result(
+    framed_payload: bytes, parsed: AtfleeMeasurement
+) -> None:
     """Decode an A5 / A7 body composition result packet.
 
     Unknown bytes are kept as None so the parser does not fabricate values
@@ -686,7 +676,9 @@ def _decode_body_composition_result(framed_payload: bytes, parsed: AtfleeMeasure
     parsed.packet_sequence = framed_payload[0] if len(framed_payload) > 0 else None
     parsed.packet_tail = framed_payload[19] if len(framed_payload) > 19 else None
     parsed.extended_payload_hex = (
-        framed_payload[4:19].hex() if len(framed_payload) >= 19 else framed_payload[4:].hex()
+        framed_payload[4:19].hex()
+        if len(framed_payload) >= 19
+        else framed_payload[4:].hex()
     )
 
     if len(framed_payload) >= 8:
@@ -735,7 +727,9 @@ def _extract_inline_impedance(framed_payload: bytes, parsed: AtfleeMeasurement) 
     candidates: list[int] = []
     end = min(len(framed_payload) - 1, 18)
     for idx in range(9, end):
-        value = int.from_bytes(framed_payload[idx : idx + 2], byteorder="big", signed=False)
+        value = int.from_bytes(
+            framed_payload[idx : idx + 2], byteorder="big", signed=False
+        )
         if 100 <= value <= 1500:
             candidates.append(value)
     if len(candidates) == 1:

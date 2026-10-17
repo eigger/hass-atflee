@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import datetime, timedelta
 import logging
 from time import monotonic
@@ -74,6 +75,7 @@ _LOGGER = logging.getLogger(__name__)
 def last_weights_store_key(entry_id: str) -> str:
     """Storage key of the last stable weight per user of one config entry."""
     return f"{DOMAIN}.{entry_id}.last_weights"
+
 
 # Reliable fallback poll. HA's bluetooth manager de-duplicates advertisements
 # whose payload is unchanged, and this scale advertises a *static* payload
@@ -169,7 +171,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             hass,
             _LOGGER,
             config_entry=entry,
-            name=f"{DOMAIN}_{self.address}",
+            name=DOMAIN,
             update_interval=None,
         )
 
@@ -230,15 +232,15 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             self._hardware_info_attempts -= 1
             raise
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Atflee device info read failed for %s: %s", self.address, err)
+            _LOGGER.debug("Atflee device info read failed: %s", type(err).__name__)
             return
         if info is None:
             if definitive:
                 self._hardware_info_done = True
-            _LOGGER.debug("Atflee device info unavailable for %s", self.address)
+            _LOGGER.debug("Atflee device info unavailable")
             return
         self._hardware_info_done = definitive
-        _LOGGER.debug("Atflee device info for %s: %s", self.address, info.as_dict())
+        _LOGGER.debug("Atflee device info read complete")
         if not definitive and self.hardware_info is not None:
             # A partial read must not drop strings stored by an earlier full read.
             info = AtfleeHardwareInfo(
@@ -269,10 +271,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
     async def async_start(self) -> None:
         """Start advertisement-driven update flow."""
         if self._adv_unsub is not None:
-            _LOGGER.debug(
-                "Atflee adv callback already registered for %s; skip re-register",
-                self.address,
-            )
+            _LOGGER.debug("Atflee advertisement callback already registered")
             return
         self._adv_unsub = bluetooth.async_register_callback(
             self.hass,
@@ -280,9 +279,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             {"address": self.address},
             bluetooth.BluetoothScanningMode.ACTIVE,
         )
-        _LOGGER.debug(
-            "Atflee adv callback registered: address=%s mode=ACTIVE", self.address
-        )
+        _LOGGER.debug("Atflee adv callback registered")
         # Fallback trigger that does not depend on advertisement callbacks (see
         # WATCHDOG_INTERVAL): polls presence and starts one session per wake.
         self._watchdog_unsub = async_track_time_interval(
@@ -298,7 +295,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         if self._adv_unsub is not None:
             self._adv_unsub()
             self._adv_unsub = None
-            _LOGGER.debug("Atflee adv callback unregistered: address=%s", self.address)
+            _LOGGER.debug("Atflee adv callback unregistered")
         if self._session_task is not None and not self._session_task.done():
             self._session_task.cancel()
             try:
@@ -312,32 +309,11 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         """Start one session when advertisement is received."""
         self._adv_callback_count += 1
         now = monotonic()
-        gap = (
-            f"{now - self._last_adv_monotonic:.2f}s"
-            if self._last_adv_monotonic is not None
-            else "first"
-        )
         self._last_adv_monotonic = now
-
-        # Surface every adv fire with enough context to tell apart "BLE stack
-        # stopped delivering ads" from "ad delivered but trigger skipped".
-        rssi = getattr(service_info, "rssi", None)
-        name = getattr(service_info, "name", None) or getattr(
-            getattr(service_info, "advertisement", None), "local_name", None
-        )
-        connectable = getattr(service_info, "connectable", None)
-        service_uuids = list(getattr(service_info, "service_uuids", []) or [])
         _LOGGER.debug(
-            "Atflee adv callback fired: address=%s count=%d gap=%s "
-            "change=%s rssi=%s name=%s connectable=%s services=%s",
-            self.address,
+            "Atflee advertisement callback count=%d connectable=%s",
             self._adv_callback_count,
-            gap,
-            change,
-            rssi,
-            name,
-            connectable,
-            service_uuids,
+            getattr(service_info, "connectable", None),
         )
 
         # An advertisement is a strong wake signal; try to start a session.
@@ -366,10 +342,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             # Scale slept / out of range: arm so its next appearance is a fresh
             # wake that gets its own session.
             if self._handled_current_presence:
-                _LOGGER.debug(
-                    "Atflee watchdog: %s now absent; re-arming for next wake",
-                    self.address,
-                )
+                _LOGGER.debug("Atflee watchdog")
             self._handled_current_presence = False
             self._failure_recorded_this_wake = False
             return
@@ -390,34 +363,20 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             now - self._last_session_end_monotonic
         )
         if remaining_cooldown > 0:
-            _LOGGER.debug(
-                "Atflee session trigger skipped (cooldown): address=%s reason=%s "
-                "remaining=%.2fs",
-                self.address,
-                reason,
-                remaining_cooldown,
-            )
+            _LOGGER.debug("Atflee session trigger skipped (cooldown)")
             return
 
         # Skip: a previous session task has not finished yet.
         if self._session_task is not None and not self._session_task.done():
-            _LOGGER.debug(
-                "Atflee session trigger skipped (session busy): address=%s reason=%s",
-                self.address,
-                reason,
-            )
+            _LOGGER.debug("Atflee session trigger skipped (session busy)")
             return
 
         self._session_trigger_count += 1
         self._handled_current_presence = True
-        _LOGGER.debug(
-            "Atflee session trigger accepted: address=%s reason=%s session=#%d adv_count=%d",
-            self.address,
-            reason,
-            self._session_trigger_count,
-            self._adv_callback_count,
+        _LOGGER.debug("Atflee session trigger accepted")
+        self._session_task = self.hass.async_create_background_task(
+            self._run_measurement_session(), "Atflee measurement session"
         )
-        self._session_task = self.hass.async_create_task(self._run_measurement_session())
 
     def user_subentries(self) -> dict[str, ConfigSubentry]:
         """Return the configured user subentries by subentry id."""
@@ -451,7 +410,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         self._notify_active_user()
 
     @callback
-    def async_add_active_user_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
+    def async_add_active_user_listener(
+        self, listener: Callable[[], None]
+    ) -> Callable[[], None]:
         """Call ``listener`` whenever the active user changes; returns the remover."""
         self._active_user_listeners.add(listener)
         return lambda: self._active_user_listeners.discard(listener)
@@ -518,13 +479,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         if attribution.user_id is None:
             self._fire_unassigned(weight_kg or 0.0, attribution, users)
         else:
-            _LOGGER.debug(
-                "Atflee weight %.1f kg attributed to %s (%s%s)",
-                weight_kg,
-                users[attribution.user_id].get(CONF_USER_NAME),
-                attribution.assignment,
-                f", {attribution.reason}" if attribution.reason else "",
-            )
+            _LOGGER.debug("Atflee measurement attributed: %s", attribution.assignment)
         return attribution
 
     def _fire_unassigned(
@@ -539,12 +494,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             }
             for c in attribution.candidates
         ]
-        _LOGGER.info(
-            "Atflee weight %.1f kg for %s matches no user (%s); not recorded",
-            weight_kg,
-            self.address,
-            attribution.reason,
-        )
+        _LOGGER.info("Atflee measurement not assigned: %s", attribution.reason)
         self.hass.bus.async_fire(
             EVENT_UNASSIGNED_MEASUREMENT,
             {
@@ -563,7 +513,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             and self._attributor.attribution.assignment == ASSIGNMENT_UNASSIGNED
         )
 
-    def _remember_weight(self, user_id: str, weight_kg: float, assignment: str | None) -> None:
+    def _remember_weight(
+        self, user_id: str, weight_kg: float, assignment: str | None
+    ) -> None:
         """Store a user's stable weight as the reference for the next session."""
         sub = self.entry.subentries.get(user_id)
         if sub is None or not should_store_weight(
@@ -626,12 +578,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             measurement.impedances_ohm,
         )
         if result is None:
-            _LOGGER.debug(
-                "Atflee body composition skipped: height=%s age=%s weight=%s",
-                height_cm,
-                age,
-                measurement.weight_kg,
-            )
+            _LOGGER.debug("Atflee body composition skipped")
             return
         measurement.bmi = round(result.bmi, 1)
         measurement.body_fat_pct = result.body_fat_pct
@@ -676,7 +623,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             else:
                 duration_seconds = int(monotonic() - self._connected_started_monotonic)
                 connection_started_at = (
-                    prev.connection_started_at if prev and prev.connection_started_at else now
+                    prev.connection_started_at
+                    if prev and prev.connection_started_at
+                    else now
                 )
         else:
             self._connected_started_monotonic = None
@@ -706,18 +655,15 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
     async def _run_measurement_session(self) -> None:
         """Run one connect/notify session triggered by advertisement."""
         async with self._session_lock:
-            ble_device = bluetooth.async_ble_device_from_address(self.hass, self.address)
+            ble_device = bluetooth.async_ble_device_from_address(
+                self.hass, self.address
+            )
             if ble_device is None:
-                _LOGGER.debug("Adv trigger but BLE device unavailable: %s", self.address)
+                _LOGGER.debug("Adv trigger but BLE device unavailable")
                 # Never actually connected; let the watchdog retry this wake.
                 self._handled_current_presence = False
                 return
-            _LOGGER.debug(
-                "Atflee session start: address=%s name=%s rssi=%s",
-                self.address,
-                ble_device.name,
-                getattr(ble_device, "rssi", None),
-            )
+            _LOGGER.debug("Atflee session start")
 
             idle_timeout = self._idle_timeout_seconds()
             connected = False
@@ -738,12 +684,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                 connected = True
                 arm_started = monotonic()
                 self._failure_recorded_this_wake = False
-                _LOGGER.debug(
-                    "Atflee session connected: address=%s idle_timeout=%.1fs",
-                    self.address,
-                    idle_timeout,
-                )
-                
+                _LOGGER.debug("Atflee session connected")
+
                 # Push the user profile (B1) on connect, with the impedance
                 # function enabled, so the scale measures impedance after the
                 # weight settles. Its A1/A3/A5/A7 messages are acked below.
@@ -782,7 +724,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         "disabled" if not send_enabled else "no user profile",
                     )
 
-                self.async_set_updated_data(self._build_state(connected=True, measuring=True))
+                self.async_set_updated_data(
+                    self._build_state(connected=True, measuring=True)
+                )
 
                 trace.record(ARM, monotonic() - arm_started)
                 arm_started = None
@@ -798,19 +742,16 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     remaining = idle_timeout - (monotonic() - last_event)
                     if remaining <= 0:
                         break
-                    measurement = await self.client.wait_for_measurement(timeout_seconds=remaining)
+                    measurement = await self.client.wait_for_measurement(
+                        timeout_seconds=remaining
+                    )
                     last_event = monotonic()
                     packets += 1
                     _LOGGER.debug(
-                        "Atflee measurement packet parsed: weight=%s bmi=%s body_fat=%s imp=%s state=%s stable=%s complete=%s raw=%s",
-                        measurement.weight_kg,
-                        measurement.bmi,
-                        measurement.body_fat_pct,
-                        measurement.impedance_ohm,
+                        "Atflee measurement packet state=%s stable=%s complete=%s",
                         measurement.measure_state,
                         measurement.is_stable,
                         measurement.is_body_composition_complete,
-                        measurement.raw_hex,
                     )
 
                     # The scale retransmits device info, stable weight and
@@ -839,7 +780,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     if measurement.measure_state == "handshake":
                         continue
 
-                    self._attribute_session(measurement.weight_kg, measurement.is_stable)
+                    self._attribute_session(
+                        measurement.weight_kg, measurement.is_stable
+                    )
                     user_id = self._session_user_id
                     unassigned = self._session_unassigned
                     decided = self._attributor.attribution
@@ -893,17 +836,24 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         and measurement.body_score is None
                     ):
                         _LOGGER.debug(
-                            "Atflee packet ignored (no mapped measurement fields): raw=%s",
-                            measurement.raw_hex,
+                            "Atflee packet ignored (no mapped measurement fields)"
                         )
                         continue
 
-                    measurement = self._merge_with_previous_measurement(measurement, user_id)
+                    measurement = self._merge_with_previous_measurement(
+                        measurement, user_id
+                    )
 
                     profile = None if no_profile else self._profile(user_id)
-                    if profile and measurement.bmi is None and measurement.weight_kg is not None:
+                    if (
+                        profile
+                        and measurement.bmi is None
+                        and measurement.weight_kg is not None
+                    ):
                         height_m = profile[0] / 100.0
-                        measurement.bmi = round(measurement.weight_kg / (height_m * height_m), 2)
+                        measurement.bmi = round(
+                            measurement.weight_kg / (height_m * height_m), 2
+                        )
 
                     if (
                         user_id is not None
@@ -927,7 +877,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     # Normal end: measured then went idle. Keep this wake
                     # "handled" so we don't immediately re-measure while still
                     # advertising.
-                    _LOGGER.debug("Atflee session idle timeout for %s", self.address)
+                    _LOGGER.debug("Atflee session ended on idle timeout")
                 else:
                     # Timed out before the link was up, or before measuring
                     # started: a failure, not an idle end. Allow a retry once
@@ -936,7 +886,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     self._handled_current_presence = False
                     if connected:
                         trace.fail(ARM)
-                    _LOGGER.debug("Atflee session timed out for %s: %s", self.address, err)
+                    _LOGGER.debug("Atflee session timed out")
             except asyncio.CancelledError:
                 cancelled = True
                 raise
@@ -947,34 +897,23 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                 self._handled_current_presence = False
                 if connected:
                     trace.fail(ARM if measure_started is None else MEASURE)
-                _LOGGER.debug("Atflee session failed for %s: %s", self.address, err)
+                _LOGGER.debug("Atflee session failed")
             finally:
-                if info_task is not None and not info_task.done():
-                    info_task.cancel()
+                if info_task is not None:
+                    if not info_task.done():
+                        info_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await info_task
                 # Bounded so a stuck BLE peer never pins this task in the
                 # "running" state and blocks future advertisement triggers.
                 try:
                     await asyncio.wait_for(self.client.disconnect(), timeout=8.0)
                 except asyncio.TimeoutError:
-                    _LOGGER.debug(
-                        "Atflee disconnect exceeded outer budget for %s; forcing teardown",
-                        self.address,
-                    )
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.debug(
-                        "Atflee disconnect raised for %s: %s",
-                        self.address,
-                        err,
-                    )
+                    _LOGGER.debug("Atflee disconnect exceeded outer budget")
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug("Atflee disconnect failed")
                 self._last_session_end_monotonic = monotonic()
-                _LOGGER.debug(
-                    "Atflee session end: address=%s session=#%d adv_count=%d "
-                    "cooldown_starts=%.1fs",
-                    self.address,
-                    self._session_trigger_count,
-                    self._adv_callback_count,
-                    self._reconnect_cooldown_seconds,
-                )
+                _LOGGER.debug("Atflee session end")
                 if measure_started is not None:
                     trace.record(MEASURE, monotonic() - measure_started)
                 elif arm_started is not None:
@@ -995,7 +934,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                             except Exception as report_err:  # noqa: BLE001
                                 # Diagnostics must not mask the session's own outcome.
                                 _LOGGER.debug(
-                                    "Building the session report failed: %s", report_err
+                                    "Building the session report failed: %s",
+                                    type(report_err).__name__,
                                 )
                                 report = fallback_report(
                                     "measure", trace=trace, exc=outcome
@@ -1004,9 +944,11 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                             if outcome is not None:
                                 self._failure_recorded_this_wake = True
                         except Exception:  # noqa: BLE001 - diagnostics must never break a session
-                            _LOGGER.debug("Atflee session report failed for %s", self.address)
+                            _LOGGER.debug("Atflee session report failed")
                 self._finish_session_user(cancelled=cancelled)
-                self.async_set_updated_data(self._build_state(connected=False, measuring=False))
+                self.async_set_updated_data(
+                    self._build_state(connected=False, measuring=False)
+                )
 
     async def _async_update_data(self) -> AtfleeState:
         # Initial state only. Real updates come from advertisement callback sessions.

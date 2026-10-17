@@ -76,17 +76,17 @@ class AtfleeMeasurement:
     impedances_ohm: tuple[float, ...] | None = None  # every channel in packet order
 
     # --- 확장 체성분 ---
-    subcutaneous_fat_pct: float | None = None   # 피하지방률 (subcutaneousFat)
-    visceral_fat: float | None = None           # 내장지방 (visceralFat / vfal)
-    muscle_pct: float | None = None             # 근육률 (muscle / musclePercent)
-    muscle_mass: float | None = None            # 근육량 kg (muscleMass)
-    bmr: int | None = None                      # 기초대사량 kcal (bmr)
-    bone_mass: float | None = None              # 골량 kg (bone / boneMass)
-    moisture_pct: float | None = None           # 수분률 (moisture / moisturePercent)
-    protein_pct: float | None = None            # 단백질률 (proteinRate / protein)
-    skeletal_muscle_pct: float | None = None    # 골격근률 (sm / smPercent)
-    physical_age: int | None = None             # 체내나이 (bodyage / physicalAge)
-    body_score: float | None = None             # 신체 점수 (bodyScore)
+    subcutaneous_fat_pct: float | None = None  # 피하지방률 (subcutaneousFat)
+    visceral_fat: float | None = None  # 내장지방 (visceralFat / vfal)
+    muscle_pct: float | None = None  # 근육률 (muscle / musclePercent)
+    muscle_mass: float | None = None  # 근육량 kg (muscleMass)
+    bmr: int | None = None  # 기초대사량 kcal (bmr)
+    bone_mass: float | None = None  # 골량 kg (bone / boneMass)
+    moisture_pct: float | None = None  # 수분률 (moisture / moisturePercent)
+    protein_pct: float | None = None  # 단백질률 (proteinRate / protein)
+    skeletal_muscle_pct: float | None = None  # 골격근률 (sm / smPercent)
+    physical_age: int | None = None  # 체내나이 (bodyage / physicalAge)
+    body_score: float | None = None  # 신체 점수 (bodyScore)
 
     # --- 기기 상태 ---
     battery_pct: int | None = None
@@ -110,11 +110,11 @@ class AtfleeMeasurement:
     assignment: str | None = None
 
     # --- 계산된 체성분 (같은 측정의 체중 x 퍼센트로 계산해 저장) ---
-    body_fat_mass: float | None = None          # 체지방량 kg
-    fat_free_mass: float | None = None          # 제지방량 kg
-    body_water_mass: float | None = None        # 체수분량 kg
-    protein_mass: float | None = None           # 단백질량 kg
-    skeletal_muscle_mass: float | None = None   # 골격근량 kg
+    body_fat_mass: float | None = None  # 체지방량 kg
+    fat_free_mass: float | None = None  # 제지방량 kg
+    body_water_mass: float | None = None  # 체수분량 kg
+    protein_mass: float | None = None  # 단백질량 kg
+    skeletal_muscle_mass: float | None = None  # 골격근량 kg
 
     def compute_masses(self, fresh: frozenset[str], weight: float | None) -> None:
         """Compute kg values from percentages that arrived with this packet.
@@ -155,9 +155,7 @@ class AtfleeMeasurement:
         codes) are not merged here, they live on :class:`AtfleeState`.
         """
         fresh = frozenset(
-            name
-            for name in _FRESH_PCT_FIELDS
-            if getattr(self, name) is not None
+            name for name in _FRESH_PCT_FIELDS if getattr(self, name) is not None
         )
         packet_weight = self.weight_kg
         if prev is not None:

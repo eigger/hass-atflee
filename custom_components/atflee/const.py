@@ -104,6 +104,4 @@ DEVICE_INFORMATION_CHARS: tuple[tuple[str, str], ...] = (
 )
 DEVICE_INFORMATION_READ_TIMEOUT_SECONDS = 1.5
 
-DEBUG_READ_UUIDS: tuple[str, ...] = (
-    "00001534-1212-efde-1523-785feabcd123",
-)
+DEBUG_READ_UUIDS: tuple[str, ...] = ("00001534-1212-efde-1523-785feabcd123",)

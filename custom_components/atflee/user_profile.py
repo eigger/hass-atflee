@@ -219,12 +219,12 @@ def _float_or_none(value: Any) -> float | None:
     return number if number > 0 else None
 
 
-def reference_weight(
-    user: Mapping[str, Any], last_weight: Any = None
-) -> float | None:
+def reference_weight(user: Mapping[str, Any], last_weight: Any = None) -> float | None:
     """A user's reference weight: the last measured one, else the expected one."""
     last = _float_or_none(last_weight)
-    return last if last is not None else _float_or_none(user.get(CONF_EXPECTED_WEIGHT_KG))
+    return (
+        last if last is not None else _float_or_none(user.get(CONF_EXPECTED_WEIGHT_KG))
+    )
 
 
 def attribute_weight(
@@ -274,7 +274,10 @@ def attribute_weight(
 
     fallback_id = resolve_user_id(users, None, default_id)
     fallback_ref = reference_weight(users[fallback_id], last_weights.get(fallback_id))
-    if fallback_ref is not None and abs(weight_kg - fallback_ref) > fallback_max_delta_kg:
+    if (
+        fallback_ref is not None
+        and abs(weight_kg - fallback_ref) > fallback_max_delta_kg
+    ):
         return Attribution(ASSIGNMENT_UNASSIGNED, None, reason, ranked)
     return Attribution(ASSIGNMENT_FALLBACK, fallback_id, reason, ranked)
 
@@ -379,7 +382,10 @@ class ActiveUserSelection:
     @property
     def user_id(self) -> str | None:
         """The selected subentry id, or None (auto) when unset or expired."""
-        if self._user_id is not None and self._clock() - self._selected_at >= self._timeout:
+        if (
+            self._user_id is not None
+            and self._clock() - self._selected_at >= self._timeout
+        ):
             self._user_id = None
         return self._user_id
 

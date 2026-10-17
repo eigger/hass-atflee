@@ -1,22 +1,12 @@
-"""Tests for the age helper, B1 user index and A7 user id (no Home Assistant)."""
+"""Tests for the age helper, B1 user index and A7 user id."""
 
 from __future__ import annotations
 
 from datetime import date
-import importlib
-from pathlib import Path
-import sys
-import types
 
-# Load atflee_ble without running the integration package (it needs Home Assistant).
-_BLE_DIR = Path(__file__).parents[1] / "custom_components" / "atflee" / "atflee_ble"
-_PKG = types.ModuleType("atflee_ble_pure")
-_PKG.__path__ = [str(_BLE_DIR)]
-sys.modules["atflee_ble_pure"] = _PKG
-
-packet = importlib.import_module("atflee_ble_pure.packet")
-profile = importlib.import_module("atflee_ble_pure.profile")
-protocol = importlib.import_module("atflee_ble_pure.protocol")
+import custom_components.atflee.atflee_ble.packet as packet
+import custom_components.atflee.atflee_ble.profile as profile
+import custom_components.atflee.atflee_ble.protocol as protocol
 
 age_from_birth_date = profile.age_from_birth_date
 
@@ -82,7 +72,9 @@ def _a7(user_id: int | None, *, count: int = 2, with_flag: bool = True) -> bytes
 
 
 def _parse(data: bytes):
-    msg = packet.AtfleeMessage(pkg_index=1, command=packet.CMD_UPLOAD_RESULT_EX, data=data)
+    msg = packet.AtfleeMessage(
+        pkg_index=1, command=packet.CMD_UPLOAD_RESULT_EX, data=data
+    )
     return protocol.parse_message(msg, None)
 
 
@@ -99,5 +91,6 @@ def test_a7_user_id_absent_when_truncated() -> None:
 
 
 def test_user_id_defaults_to_none() -> None:
-    models = importlib.import_module("atflee_ble_pure.models")
+    from custom_components.atflee.atflee_ble import models
+
     assert models.AtfleeMeasurement().user_id is None

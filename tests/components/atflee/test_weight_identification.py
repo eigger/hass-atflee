@@ -1,22 +1,10 @@
-"""Tests for weight-based user identification (no Home Assistant)."""
+"""Tests for weight-based user identification."""
 
 from __future__ import annotations
 
-import importlib
-from pathlib import Path
-import sys
-import types
 
-_DIR = Path(__file__).parents[1] / "custom_components" / "atflee"
-_PKG = types.ModuleType("atflee_pure")
-_PKG.__path__ = [str(_DIR)]
-sys.modules["atflee_pure"] = _PKG
-_BLE = types.ModuleType("atflee_pure.atflee_ble")
-_BLE.__path__ = [str(_DIR / "atflee_ble")]
-sys.modules["atflee_pure.atflee_ble"] = _BLE
-
-up = importlib.import_module("atflee_pure.user_profile")
-models = importlib.import_module("atflee_pure.atflee_ble.models")
+import custom_components.atflee.user_profile as up
+import custom_components.atflee.atflee_ble.models as models
 
 AtfleeMeasurement = models.AtfleeMeasurement
 
@@ -92,7 +80,10 @@ def test_out_of_tolerance_falls_back_to_default() -> None:
 def test_tolerance_boundary_is_inclusive() -> None:
     users = _users()
     assert _attr(73.0, users, {"a": 70.0, "b": 50.0}, tolerance_kg=3.0).user_id == "a"
-    assert _attr(73.1, users, {"a": 70.0, "b": 50.0}, tolerance_kg=3.0).assignment != "matched"
+    assert (
+        _attr(73.1, users, {"a": 70.0, "b": 50.0}, tolerance_kg=3.0).assignment
+        != "matched"
+    )
 
 
 def test_ambiguous_when_second_best_is_too_close() -> None:
@@ -141,8 +132,14 @@ def test_unassigned_when_far_from_default_reference() -> None:
 def test_fallback_delta_boundary_is_inclusive() -> None:
     users = _users()
     last = {"a": 60.0, "b": 100.0}
-    assert _attr(75.0, users, last, default_id="a", fallback_max_delta_kg=15).user_id == "a"
-    assert _attr(75.1, users, last, default_id="a", fallback_max_delta_kg=15).user_id is None
+    assert (
+        _attr(75.0, users, last, default_id="a", fallback_max_delta_kg=15).user_id
+        == "a"
+    )
+    assert (
+        _attr(75.1, users, last, default_id="a", fallback_max_delta_kg=15).user_id
+        is None
+    )
 
 
 def test_default_without_reference_weight_is_never_unassigned() -> None:
@@ -315,7 +312,9 @@ def test_guest_fallback_does_not_shift_the_default_users_reference() -> None:
 
     def weigh(weight):
         result = _attr(weight, users, last, default_id="a")
-        if up.should_store_weight(result.assignment, users[result.user_id], last.get(result.user_id)):
+        if up.should_store_weight(
+            result.assignment, users[result.user_id], last.get(result.user_id)
+        ):
             last[result.user_id] = weight
         return result
 

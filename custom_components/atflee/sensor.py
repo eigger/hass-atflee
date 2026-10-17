@@ -261,6 +261,7 @@ USER_SENSORS: tuple[AtfleeUserSensorDescription, ...] = (
     ),
 )
 
+
 @dataclass(frozen=True, kw_only=True)
 class AtfleeProfileSensorDescription(SensorEntityDescription):
     """Description of a profile sensor read from the user's subentry data."""
@@ -422,7 +423,9 @@ async def async_setup_entry(
         if isinstance(description, AtfleeStatusSensorDescription):
             # Ready only when a verdict can actually be produced (e.g. age in range).
             profile = coordinator.body_profile(subentry_id)
-            age, male = (None, None) if profile is None else (profile[1], profile[2] == "male")
+            age, male = (
+                (None, None) if profile is None else (profile[1], profile[2] == "male")
+            )
             return description.evaluate(value, age, male) is not None
         return True
 
@@ -452,7 +455,9 @@ async def async_setup_entry(
                     # enabling one reloads the entry before any measurement is available.
                     or not description.entity_registry_enabled_default
                 ):
-                    entities.append(_user_entity(coordinator, entry, subentry, description))
+                    entities.append(
+                        _user_entity(coordinator, entry, subentry, description)
+                    )
                     continue
                 # Left over from a version that created it without ever having a value.
                 registry.async_remove(reg_entry.entity_id)
@@ -483,7 +488,9 @@ async def async_setup_entry(
     _add_ready_sensors()
 
 
-class _AtfleeRestoreSensor(CoordinatorEntity[AtfleeDataUpdateCoordinator], RestoreSensor):
+class _AtfleeRestoreSensor(
+    CoordinatorEntity[AtfleeDataUpdateCoordinator], RestoreSensor
+):
     """Sensor that falls back to its restored value while the scale sends none."""
 
     _attr_has_entity_name = True
@@ -509,7 +516,9 @@ class _AtfleeRestoreSensor(CoordinatorEntity[AtfleeDataUpdateCoordinator], Resto
         last_sensor_data = await self.async_get_last_sensor_data()
         if last_sensor_data is None:
             return
-        self._restored_native_value = self._coerce_restored_value(last_sensor_data.native_value)
+        self._restored_native_value = self._coerce_restored_value(
+            last_sensor_data.native_value
+        )
 
     def _coerce_restored_value(self, value: Any) -> float | int | str | None:
         """Convert restored state into expected value type for this entity."""
@@ -577,7 +586,11 @@ class AtfleeUserSensorEntity(_AtfleeRestoreSensor):
 
     def _current_value(self) -> float | int | str | None:
         measurement = self._measurement
-        return None if measurement is None else self.entity_description.value_fn(measurement)
+        return (
+            None
+            if measurement is None
+            else self.entity_description.value_fn(measurement)
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -595,7 +608,9 @@ class AtfleeStatusSensorEntity(AtfleeUserSensorEntity):
         if value is None:
             return None
         profile = self.coordinator.body_profile(self._subentry_id)
-        age, male = (None, None) if profile is None else (profile[1], profile[2] == "male")
+        age, male = (
+            (None, None) if profile is None else (profile[1], profile[2] == "male")
+        )
         return self.entity_description.evaluate(value, age, male)
 
     @property
@@ -617,7 +632,9 @@ class AtfleeStatusSensorEntity(AtfleeUserSensorEntity):
         }
 
 
-class AtfleeProfileSensorEntity(CoordinatorEntity[AtfleeDataUpdateCoordinator], SensorEntity):
+class AtfleeProfileSensorEntity(
+    CoordinatorEntity[AtfleeDataUpdateCoordinator], SensorEntity
+):
     """One field of a user's profile; a user edit reloads the entry, rebuilding it."""
 
     _attr_has_entity_name = True
@@ -734,14 +751,18 @@ def _measurement_attributes(m: AtfleeMeasurement | None) -> dict[str, Any]:
     }
 
 
-def _packet_attributes(state: AtfleeState, m: AtfleeMeasurement | None) -> dict[str, Any]:
+def _packet_attributes(
+    state: AtfleeState, m: AtfleeMeasurement | None
+) -> dict[str, Any]:
     """Scale sensors: the latest packet's fields plus the scale-wide diagnostics."""
     return {
         # 패킷 진단
         "last_packet_hex": state.last_packet_hex,
         "ble_connected": state.connected,
         "connection_started_at": (
-            state.connection_started_at.isoformat() if state.connection_started_at else None
+            state.connection_started_at.isoformat()
+            if state.connection_started_at
+            else None
         ),
         "connection_duration_seconds": state.connection_duration_seconds,
         "measuring": state.measuring,
@@ -750,14 +771,18 @@ def _packet_attributes(state: AtfleeState, m: AtfleeMeasurement | None) -> dict[
     }
 
 
-class _AtfleeFailureSensor(CoordinatorEntity[AtfleeDataUpdateCoordinator], SensorEntity):
+class _AtfleeFailureSensor(
+    CoordinatorEntity[AtfleeDataUpdateCoordinator], SensorEntity
+):
     """Diagnostic sensor backed by coordinator attributes, not the packet state."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _key: str
 
-    def __init__(self, coordinator: AtfleeDataUpdateCoordinator, entry: ConfigEntry) -> None:
+    def __init__(
+        self, coordinator: AtfleeDataUpdateCoordinator, entry: ConfigEntry
+    ) -> None:
         super().__init__(coordinator)
         address = entry.data[CONF_ADDRESS]
         self._attr_translation_key = self._key

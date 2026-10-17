@@ -1,2 +1,2 @@
-# Test environment. The integration's own requirements come from manifest.json.
-pytest==8.4.2
+homeassistant==2026.10.2
+pytest-homeassistant-custom-component==0.13.373

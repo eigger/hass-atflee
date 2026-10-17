@@ -1,21 +1,11 @@
-"""Tests for the device-info (A1) decoding and Device Information strings (no Home Assistant)."""
+"""Tests for the device-info (A1) decoding and Device Information strings."""
 
 from __future__ import annotations
 
-import importlib
-from pathlib import Path
-import sys
-import types
 
-# Load atflee_ble without running the integration package (it needs Home Assistant).
-_BLE_DIR = Path(__file__).parents[1] / "custom_components" / "atflee" / "atflee_ble"
-_PKG = types.ModuleType("atflee_ble_pure_di")
-_PKG.__path__ = [str(_BLE_DIR)]
-sys.modules["atflee_ble_pure_di"] = _PKG
-
-packet = importlib.import_module("atflee_ble_pure_di.packet")
-protocol = importlib.import_module("atflee_ble_pure_di.protocol")
-models = importlib.import_module("atflee_ble_pure_di.models")
+import custom_components.atflee.atflee_ble.packet as packet
+import custom_components.atflee.atflee_ble.protocol as protocol
+import custom_components.atflee.atflee_ble.models as models
 
 # Device-info frame captured from an iGripX_JC780 scale.
 A1_FRAME = bytes.fromhex("000a00a1337116200019010a1900000000000018")
