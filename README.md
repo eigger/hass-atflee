@@ -109,8 +109,8 @@ The body-composition profile is sent to the scale when it connects, before the w
 
 **Scale device**
 
-- **Battery (%)**, **Connection** (binary sensor)
-- Diagnostic: **Connection Duration**, **Verify Status**, **Measure Status**, **Scale Status**, **Failure Count**, **Last Failure**
+- **Battery (%)**
+- Diagnostic: **Connection** (binary sensor), **Connection Duration**, **Verify Status**, **Measure Status**, **Scale Status**, **Failure Count**, **Last Failure**
 - **Active user** (select) and **Body composition measurement** (switch)
 
 ## Device Settings (Configuration)
