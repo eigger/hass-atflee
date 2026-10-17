@@ -24,7 +24,7 @@
         "data": {
           "name": "이름",
           "height_cm": "키(cm)",
-          "birth_date": "생년월일",
+          "birth_date": "생년월일 (YYYY-MM-DD)",
           "sex": "성별",
           "expected_weight_kg": "예상 체중(kg, 선택)"
         },
@@ -194,7 +194,7 @@
           "data": {
             "name": "이름",
             "height_cm": "키(cm)",
-            "birth_date": "생년월일",
+            "birth_date": "생년월일 (YYYY-MM-DD)",
             "sex": "성별",
             "expected_weight_kg": "예상 체중(kg, 선택)"
           },
@@ -207,7 +207,7 @@
           "data": {
             "name": "이름",
             "height_cm": "키(cm)",
-            "birth_date": "생년월일",
+            "birth_date": "생년월일 (YYYY-MM-DD)",
             "sex": "성별",
             "expected_weight_kg": "예상 체중(kg, 선택)"
           },

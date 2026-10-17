@@ -25,7 +25,6 @@ from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     BooleanSelector,
-    DateSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -119,7 +118,7 @@ def _user_schema() -> vol.Schema:
                     unit_of_measurement="cm",
                 )
             ),
-            vol.Required(CONF_BIRTH_DATE): DateSelector(),
+            vol.Required(CONF_BIRTH_DATE): TextSelector(),
             vol.Required(CONF_SEX, default=DEFAULT_SEX): SelectSelector(
                 SelectSelectorConfig(
                     options=list(SEXES),

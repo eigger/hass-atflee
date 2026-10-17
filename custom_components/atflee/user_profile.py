@@ -6,6 +6,7 @@ be unit-tested on its own.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
@@ -40,14 +41,20 @@ from .const import (
 DEFAULT_USER_NAME = "User 1"
 
 
+_BIRTH_DATE_RE = re.compile(r"^(\d{4})[-./]?(\d{1,2})[-./]?(\d{1,2})$")
+
+
 def parse_birth_date(value: Any) -> date | None:
-    """Parse an ISO ``YYYY-MM-DD`` string (or a date) into a date."""
+    """Parse a date, or text such as ``1985-03-07``, ``1985.3.7`` or ``19850307``."""
     if isinstance(value, date):
         return value
     if not isinstance(value, str):
         return None
+    match = _BIRTH_DATE_RE.match(value.strip())
+    if match is None:
+        return None
     try:
-        return date.fromisoformat(value)
+        return date(*(int(part) for part in match.groups()))
     except ValueError:
         return None
 

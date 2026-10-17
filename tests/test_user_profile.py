@@ -49,6 +49,14 @@ def test_birth_date_validation() -> None:
     }
 
 
+def test_birth_date_accepts_common_text_formats() -> None:
+    expected = date(1985, 3, 7)
+    for text in ("1985-03-07", "1985-3-7", "1985.3.7", "1985/03/07", "19850307", " 1985-03-07 "):
+        assert up.parse_birth_date(text) == expected
+    for text in ("1985-02-30", "85-03-07", "", "1985-13-01", "abc"):
+        assert up.parse_birth_date(text) is None
+
+
 def test_height_sex_and_name_validation() -> None:
     assert "height_cm" in up.validate_user_input(VALID | {"height_cm": 79}, TODAY)
     assert "height_cm" in up.validate_user_input(VALID | {"height_cm": 251}, TODAY)

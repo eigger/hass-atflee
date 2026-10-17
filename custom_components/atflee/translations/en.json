@@ -24,7 +24,7 @@
         "data": {
           "name": "Name",
           "height_cm": "Height (cm)",
-          "birth_date": "Birth date",
+          "birth_date": "Birth date (YYYY-MM-DD)",
           "sex": "Sex",
           "expected_weight_kg": "Expected weight (kg, optional)"
         },
@@ -134,7 +134,7 @@
           "data": {
             "name": "Name",
             "height_cm": "Height (cm)",
-            "birth_date": "Birth date",
+            "birth_date": "Birth date (YYYY-MM-DD)",
             "sex": "Sex",
             "expected_weight_kg": "Expected weight (kg, optional)"
           },
@@ -147,7 +147,7 @@
           "data": {
             "name": "Name",
             "height_cm": "Height (cm)",
-            "birth_date": "Birth date",
+            "birth_date": "Birth date (YYYY-MM-DD)",
             "sex": "Sex",
             "expected_weight_kg": "Expected weight (kg, optional)"
           },
