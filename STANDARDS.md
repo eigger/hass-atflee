@@ -2,12 +2,12 @@
 
 - 표준: https://github.com/eigger/hass-repo-standards/tree/ff46b0c8d9ba53b1d35ab9a4aa38f4db26c06870
 - 참조 커밋 SHA: `ff46b0c8d9ba53b1d35ab9a4aa38f4db26c06870` (2026-10-17 원격 main 직접 확인)
-- 채택일: 2026-10-17 착수; 독립 로컬 검증 완료; 기본 브랜치 게시·CI 대기
+- 채택일: 2026-10-17 착수; 구현4da5699 master 게시·독립 로컬/원격 검증 완료; 마감 문서 commit CI는 별도 확인
 - profile: integration / ha
 - 적용 점검표: [ADOPTION_CHECKLIST.md](ADOPTION_CHECKLIST.md)
 - 중앙 현황표: https://github.com/eigger/hass-repo-standards/blob/main/docs/adoption-status.md
 - 조율 / 구현 / 독립 리뷰·검증: root / atflee_implementation·atflee_docs / review_atflee
-- 중앙 현황 갱신: 2026-10-17 진행 중, 시작 commit `451d78896e692d6bda13fdd6230db07759688bb9`; 최종 갱신 대기
+- 중앙 현황 갱신: 2026-10-17 진행 중, 시작 commit `451d78896e692d6bda13fdd6230db07759688bb9`; 구현/검증 종료보고9941581fe3c4428ddef669a5db028c9dbef3a87a main 반영; 마감 문서CI 후 최종상태 갱신
 - 실제 기본 브랜치: master
 - domain / 테스트 경로: atflee / tests/components/atflee/
 - 변경 전·후 지원 최소 HA: `hacs.json.homeassistant=2025.8.0` 유지. 기존 README/manifest에 다른 하한 없음. current 도구와 지원 선언 구분
@@ -21,9 +21,9 @@
 
 기존 사용자별 식별·센서/unique ID·entry 스키마·상태/통계 계약을 보존하면서 실제 HA 테스트·공통 CI와 docs 분리를 채택합니다. 사용자 요청의 최초 적용이며 기존 기준을 변경하는 후속 이관이 아닙니다. 이번 기준·문서/CI 실제 내용·미검증은 체크리스트에서 확인합니다. 과거0.3.2 이하 프로필 업그레이드는 [기존 안내](docs/usage.ko.md#032-이하에서-업그레이드)를 보존하며 새 자동 migration을 주장하지 않습니다.
 
-## 예외·미완료
+## 예외·검증 결과
 
-구현4환경 및 독립2환경의 실제 최소/current HA와 blesession0.9.0에서 각179passed(skip0)·pipcheck PASS입니다. 부분setup/GATT취소/최소pycares/options/privacy 지적 수정 후 재검증했습니다. 게시 commit·원격CI·중앙종료보고는 대기이므로 채택 완료로 표시하지 않습니다. 규칙별 상태와 실행 근거는 체크리스트를 따릅니다. 실물 체중계·새 proxy 보드·HA frontend UI는 이번 공통화에서 미검증입니다.
+구현4환경 및 독립2환경의 실제 최소/current HA와 blesession0.9.0에서 각179passed(skip0)·pipcheck PASS입니다. 부분setup/GATT취소/최소pycares/options/privacy 지적 수정 후 재검증했습니다. 구현 commit `4da5699c75021e272442165473ba6655f9f90e5c`의 [Tests](https://github.com/eigger/hass-atflee/actions/runs/39039498134) 4matrix 각179passed·pipcheck와 [Validate](https://github.com/eigger/hass-atflee/actions/runs/39039498020) HACS9checks·Hassfest를 독립 성공 확인했습니다. 중앙 [구현/검증 종료보고9941581](https://github.com/eigger/hass-repo-standards/commit/9941581fe3c4428ddef669a5db028c9dbef3a87a) main 반영 완료이며 적용 필수 PASS/N/A·현재 예외/TODO는 없습니다. 이 마감 문서를 추가하는 후속 commit의 CI는 별도로 확인한 뒤 중앙 최종상태를 갱신합니다. 규칙별 상태와 실행 근거는 체크리스트를 따릅니다. 실물 체중계·새 proxy 보드·HA frontend UI는 이번 공통화에서 미검증입니다.
 
 ### 브랜드 확인 범위
 
