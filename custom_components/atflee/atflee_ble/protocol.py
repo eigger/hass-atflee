@@ -380,7 +380,7 @@ def build_user_info_frames(
     payload = (
         (int(timestamp) & 0xFFFFFFFF).to_bytes(4, "big")
         + (offset_minutes & 0xFFFF).to_bytes(2, "big")
-        + bytes([user_index & 0xFF, max(0, min(250, int(height_cm)))])
+        + bytes([max(1, min(255, int(user_index))), max(0, min(250, int(height_cm)))])
         + (max(0, int(weight_kg * 100)) & 0xFFFF).to_bytes(2, "big")
         + bytes([age_byte, function_flags & 0xFF])
         + (max(0, int(target_weight_kg * 100)) & 0xFFFF).to_bytes(2, "big")
@@ -627,6 +627,8 @@ def parse_message(
         count = data[9]
         _apply_impedances(parsed, _read_impedances(data, 10, count, scaled))
         pos = 10 + 2 * count
+        if len(data) >= pos + 4:
+            parsed.user_id = int.from_bytes(data[pos : pos + 4], "big")
         if len(data) >= pos + 7 and data[pos + 4]:
             body_fat = int.from_bytes(data[pos + 5 : pos + 7], "big") / 10.0
             if 2.0 <= body_fat <= 80.0:

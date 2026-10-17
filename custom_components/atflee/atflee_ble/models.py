@@ -37,6 +37,7 @@ class AtfleeMeasurement:
     # --- 기기 상태 ---
     battery_pct: int | None = None
     heart_rate: int | None = None
+    user_id: int | None = None  # scale-side user id carried by A7 results
     verify_status: int | None = None
     measure_status: int | None = None
     scale_status: int | None = None
