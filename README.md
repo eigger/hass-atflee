@@ -65,7 +65,7 @@ Device setup and discovery are done through the Home Assistant UI.
    - Home Assistant should automatically discover the "Atflee" device via Bluetooth. Click **Configure**.
    - If it wasn't auto-discovered, click **Add Integration** and search for "Atflee".
 3. **Configure User Details**:
-   - Setup ends with a first-user step: **Name**, **Height**, **Birth Date**, **Sex** and an optional **Expected weight**.
+   - Setup ends with a first-user step: **Name**, **Height**, **Birth Date** (typed as `YYYY-MM-DD`), **Sex** and an optional **Expected weight**.
    - This information is required for the scale to calculate body composition metrics (Fat, Muscle, etc.) locally or via its algorithm.
 4. **Finalize**:
    - Once configured, stay on the scale until the measurement is complete and synced to HA.
