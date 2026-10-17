@@ -8,6 +8,13 @@ CONF_NOTIFY_TIMEOUT_SECONDS = "notify_timeout_seconds"
 CONF_HEIGHT_CM = "height_cm"
 CONF_SEX = "sex"
 CONF_ENABLE_BODY_COMP = "enable_body_composition"
+# Scale-level option: subentry id of the user assumed when nobody is selected.
+CONF_DEFAULT_USER = "default_user"
+
+# State of the "Active user" select meaning "no explicit selection".
+ACTIVE_USER_AUTO = "auto"
+# The selection falls back to auto after this long if no session consumed it.
+ACTIVE_USER_TIMEOUT_SECONDS = 600
 
 # Per-user profile keys, stored in the data of a "user" config subentry.
 SUBENTRY_TYPE_USER = "user"

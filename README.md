@@ -70,6 +70,13 @@ Device setup and discovery are done through the Home Assistant UI.
 4. **Finalize**:
    - Once configured, stay on the scale until the measurement is complete and synced to HA.
 
+## Multiple users
+
+Each person is a **User** subentry of the scale (Settings > Devices & Services > Atflee > Add user) with their own device and sensors.
+
+- **Active user** (select on the scale device): `auto` or one of the users. The choice is used when the scale connects and for the next weight, then falls back to `auto` after one finished measurement or after 10 minutes. It is not kept across restarts or reloads. Changing it while a measurement is already running does not move that measurement to another user.
+- **Default user** (integration options): the user assumed in `auto` mode. Leave it empty to use the first user (lowest slot).
+
 ## How It Works
 
 - The integration listens for Atflee scale advertisements and connects when a measurement is detected.

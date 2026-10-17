@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
 from time import monotonic
@@ -12,7 +13,7 @@ from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -20,6 +21,7 @@ from .atflee_ble.bodycomp import IMPEDANCE_CHANNELS, calculate_body_composition
 from .atflee_ble.connection import AtfleeBleClient
 from .atflee_ble.profile import age_from_birth_date
 from .const import (
+    CONF_DEFAULT_USER,
     CONF_NOTIFY_TIMEOUT_SECONDS,
     DOMAIN,
     GATT_PROFILES,
@@ -27,7 +29,12 @@ from .const import (
 )
 from .atflee_ble.models import AtfleeMeasurement, AtfleeState, next_state
 from .session_report import ARM, MEASURE, SessionTrace, build_session_report
-from .user_profile import primary_user_id, profile_from_data
+from .user_profile import (
+    ActiveUserSelection,
+    profile_from_data,
+    resolve_user_id,
+    user_slot,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +95,13 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         self._adv_callback_count: int = 0
         self._session_trigger_count: int = 0
         self._last_adv_monotonic: float | None = None
+        # Active user chosen on the select (not persisted; lost on reload).
+        self._selection = ActiveUserSelection()
+        self._selection_timer = None
+        self._active_user_listeners: set[Callable[[], None]] = set()
+        # User the current session's measurement is attributed to, locked at the
+        # first weight so a later select change cannot split one measurement.
+        self._session_user_id: str | None = None
 
         super().__init__(
             hass,
@@ -122,6 +136,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
 
     async def async_stop(self) -> None:
         """Stop callbacks and running session."""
+        self._cancel_selection_timer()
         if self._watchdog_unsub is not None:
             self._watchdog_unsub()
             self._watchdog_unsub = None
@@ -257,17 +272,84 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             if sub.subentry_type == SUBENTRY_TYPE_USER
         }
 
+    @property
+    def active_user_id(self) -> str | None:
+        """Subentry id picked on the select, or None for auto."""
+        user_id = self._selection.user_id
+        return user_id if user_id in self.user_subentries() else None
+
+    @callback
+    def async_set_active_user(self, user_id: str | None) -> None:
+        """Select a user (None = auto); it expires after ACTIVE_USER_TIMEOUT_SECONDS.
+
+        Takes effect for the next connect (profile push) and for the weight of the
+        running session if that has not arrived yet.
+        """
+        self._cancel_selection_timer()
+        if user_id is not None and user_id not in self.user_subentries():
+            user_id = None
+        self._selection.select(user_id)
+        if user_id is not None:
+            self._selection_timer = async_call_later(
+                self.hass, self._selection.timeout, self._async_selection_expired
+            )
+        self._notify_active_user()
+
+    @callback
+    def async_add_active_user_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Call ``listener`` whenever the active user changes; returns the remover."""
+        self._active_user_listeners.add(listener)
+        return lambda: self._active_user_listeners.discard(listener)
+
+    def _notify_active_user(self) -> None:
+        for listener in list(self._active_user_listeners):
+            listener()
+
+    def _cancel_selection_timer(self) -> None:
+        if self._selection_timer is not None:
+            self._selection_timer()
+            self._selection_timer = None
+
+    @callback
+    def _async_selection_expired(self, _now=None) -> None:
+        # The timer is re-armed on every selection, so firing means it timed out.
+        self._selection_timer = None
+        self._selection.clear()
+        self._notify_active_user()
+
+    def _pick_user_for_weight(self, weight_kg: float) -> str | None:
+        """Choose a user from the measured weight (auto mode); None = undecided.
+
+        Seam for weight-based identification; not implemented yet.
+        """
+        return None
+
     def _resolve_user(self, measurement: AtfleeMeasurement | None = None) -> str | None:
         """Return the subentry id a measurement belongs to, or None without users.
 
-        ``measurement`` is None when asked before any weight is known (the profile
-        pushed to the scale on connect). Currently every measurement is attributed
-        to the primary user (lowest slot); this is the single place where a user
-        selection or weight-based identification plugs in. With no users configured
-        nothing is attributed: the packet only updates the scale-level state.
+        Order: the user locked for this session, the user selected on the select,
+        a weight-based pick (auto mode only), the default user option, the lowest
+        slot. ``measurement`` is None before any weight is known (the profile
+        pushed to the scale on connect). With no users configured nothing is
+        attributed: the packet only updates the scale-level state.
         """
-        users = self.user_subentries()
-        return primary_user_id({sid: sub.data for sid, sub in users.items()})
+        users = {sid: sub.data for sid, sub in self.user_subentries().items()}
+        if self._session_user_id in users:
+            return self._session_user_id
+        active = self.active_user_id
+        if active is None and measurement is not None and measurement.weight_kg:
+            picked = self._pick_user_for_weight(measurement.weight_kg)
+            if picked in users:
+                return picked
+        return resolve_user_id(users, active, self.entry.options.get(CONF_DEFAULT_USER))
+
+    def _finish_session_user(self, *, cancelled: bool) -> None:
+        """Release the session's user lock; a consumed selection falls back to auto."""
+        locked, self._session_user_id = self._session_user_id, None
+        if not cancelled and locked is not None and locked == self._selection.user_id:
+            self._cancel_selection_timer()
+            self._selection.clear()
+            self._notify_active_user()
 
     def _profile(self, user_id: str | None) -> tuple[int, int, str] | None:
         """Return (height_cm, age, sex) of a user, or None if unavailable."""
@@ -445,7 +527,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     )
                 )
 
-                profile = self._profile(self._resolve_user()) if send_enabled else None
+                connect_user = self._resolve_user()
+                profile = self._profile(connect_user) if send_enabled else None
                 if profile is not None:
                     now_local = dt_util.now()
                     height_cm, age, sex = profile
@@ -460,6 +543,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         pkg_index=self.client.next_pkg_index(),
                         timestamp=int(now_local.timestamp()),
                         utc_offset_seconds=int(utc_offset.total_seconds()),
+                        user_index=user_slot(self.entry.subentries[connect_user].data),
                     )
                     await self.client.send_frames(user_info_frames)
                 else:
@@ -517,6 +601,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         continue
 
                     user_id = self._resolve_user(measurement)
+                    if user_id is not None and (measurement.weight_kg or 0) > 0:
+                        self._session_user_id = user_id
                     self._apply_body_composition(measurement, user_id)
 
                     # Ignore control/heartbeat packets that do not carry any mapped value.
@@ -646,6 +732,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                                 self._failure_recorded_this_wake = True
                         except Exception:  # noqa: BLE001 - diagnostics must never break a session
                             _LOGGER.debug("Atflee session report failed for %s", self.address)
+                self._finish_session_user(cancelled=cancelled)
                 self.async_set_updated_data(self._build_state(connected=False, measuring=False))
 
     async def _async_update_data(self) -> AtfleeState:

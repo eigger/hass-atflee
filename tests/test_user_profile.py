@@ -118,3 +118,60 @@ def test_reload_needed() -> None:
     )
     assert up.reload_needed(users, users, {"notify_timeout_seconds": 12}, {"notify_timeout_seconds": 20}, live)
     assert up.reload_needed(users, users, {}, {"notify_timeout_seconds": 20}, live)
+
+
+def _users() -> dict[str, dict]:
+    return {
+        "b": {"name": "Bob", "slot": 2},
+        "a": {"name": "Alice", "slot": 1},
+        "c": {"name": "Bob", "slot": 3},
+    }
+
+
+def test_option_labels_are_unique_and_in_slot_order() -> None:
+    labels = up.user_option_labels(_users())
+    assert list(labels) == ["a", "b", "c"]
+    assert list(labels.values()) == ["Alice", "Bob", "Bob (2)"]
+    # A user called "auto" must not shadow the auto option.
+    assert up.user_option_labels({"x": {"name": "auto", "slot": 1}}) == {"x": "auto (2)"}
+    assert up.user_option_labels({}) == {}
+
+
+def test_resolve_order_active_default_lowest_slot() -> None:
+    users = _users()
+    assert up.resolve_user_id(users, "c", "b") == "c"
+    assert up.resolve_user_id(users, None, "b") == "b"
+    assert up.resolve_user_id(users, None, None) == "a"
+    # Ids that no longer exist fall through.
+    assert up.resolve_user_id(users, "gone", "b") == "b"
+    assert up.resolve_user_id(users, "gone", "gone") == "a"
+    assert up.resolve_user_id({}, "a", "b") is None
+
+
+def test_active_selection_expires_with_injected_clock() -> None:
+    now = [100.0]
+    sel = up.ActiveUserSelection(timeout=600, clock=lambda: now[0])
+    assert sel.user_id is None
+    sel.select("a")
+    now[0] += 599
+    assert sel.user_id == "a"
+    now[0] += 1
+    assert sel.user_id is None
+    # Re-selecting restarts the timeout; clear and select(None) go back to auto.
+    sel.select("b")
+    now[0] += 500
+    sel.select("b")
+    now[0] += 500
+    assert sel.user_id == "b"
+    sel.clear()
+    assert sel.user_id is None
+    sel.select(None)
+    assert sel.user_id is None
+
+
+def test_reload_needed_with_default_user_live() -> None:
+    users = {"a": ("A", {"slot": 1})}
+    live = ("enable_body_composition", "default_user")
+    assert not up.reload_needed(users, users, {}, {"default_user": "a"}, live)
+    assert not up.reload_needed(users, users, {"default_user": "a"}, {}, live)
+    assert up.reload_needed(users, users, {}, {"default_user": "a"}, ("enable_body_composition",))

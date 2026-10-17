@@ -53,7 +53,11 @@
         "title": "Atflee options",
         "data": {
           "notify_timeout_seconds": "Idle disconnect timeout (seconds)",
-          "enable_body_composition": "Enable body composition measurement"
+          "enable_body_composition": "Enable body composition measurement",
+          "default_user": "Default user"
+        },
+        "data_description": {
+          "default_user": "Used when no user is selected. Empty uses the first user."
         }
       }
     }
@@ -99,6 +103,14 @@
     },
     "binary_sensor": {
       "ble_connection": { "name": "Connection" }
+    },
+    "select": {
+      "active_user": {
+        "name": "Active user",
+        "state": {
+          "auto": "Auto"
+        }
+      }
     },
     "switch": {
       "enable_body_comp": { "name": "Body composition measurement" }

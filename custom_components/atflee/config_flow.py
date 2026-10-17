@@ -29,6 +29,7 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -38,6 +39,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BIRTH_DATE,
+    CONF_DEFAULT_USER,
     CONF_ENABLE_BODY_COMP,
     CONF_EXPECTED_WEIGHT_KG,
     CONF_HEIGHT_CM,
@@ -62,6 +64,7 @@ from .user_profile import (
     DEFAULT_USER_NAME,
     lowest_free_slot,
     normalize_user_input,
+    user_option_labels,
     validate_user_input,
 )
 
@@ -281,10 +284,30 @@ class AtfleeOptionsFlow(OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         suggested_values = {**self._config_entry.data, **self._config_entry.options}
+        schema = dict(BASE_SCHEMA)
+        users = {
+            sub.subentry_id: sub.data
+            for sub in self._config_entry.subentries.values()
+            if sub.subentry_type == SUBENTRY_TYPE_USER
+        }
+        if users:
+            # Optional: leaving it empty means the user in the lowest slot.
+            schema[vol.Optional(CONF_DEFAULT_USER)] = SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        SelectOptionDict(value=sid, label=label)
+                        for sid, label in user_option_labels(users).items()
+                    ],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            )
+        # A stored default that no longer exists must not be offered back.
+        if suggested_values.get(CONF_DEFAULT_USER) not in users:
+            suggested_values.pop(CONF_DEFAULT_USER, None)
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(BASE_SCHEMA), suggested_values
+                vol.Schema(schema), suggested_values
             ),
         )
 
