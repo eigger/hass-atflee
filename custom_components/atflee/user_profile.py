@@ -263,6 +263,50 @@ def attribute_weight(
     return Attribution(ASSIGNMENT_FALLBACK, fallback_id, reason, ranked)
 
 
+class SessionAttributor:
+    """Decides once per session whose measurement it is.
+
+    The scale reports a ramp of unstable weights while someone steps on, so the
+    decision waits for the first stable weight. Until then ``attribution`` is
+    None and nothing is locked.
+    """
+
+    def __init__(self) -> None:
+        self.attribution: Attribution | None = None
+
+    def reset(self) -> None:
+        self.attribution = None
+
+    def observe(
+        self,
+        weight_kg: float | None,
+        is_stable: bool | None,
+        users: Mapping[str, Mapping[str, Any]],
+        last_weights: Mapping[str, float],
+        **kwargs: Any,
+    ) -> Attribution | None:
+        """Return the new attribution at the deciding packet, else None."""
+        if self.attribution is not None or not users:
+            return None
+        if not is_stable or not weight_kg or weight_kg <= 0:
+            return None
+        self.attribution = attribute_weight(weight_kg, users, last_weights, **kwargs)
+        return self.attribution
+
+
+def should_store_weight(
+    assignment: str | None, user: Mapping[str, Any], stored_weight: Any
+) -> bool:
+    """Whether a stable weight becomes the user's reference weight.
+
+    A fallback assignment is only a guess, so it may seed a user who has no
+    reference at all but never overwrites one.
+    """
+    if assignment == ASSIGNMENT_FALLBACK:
+        return reference_weight(user, stored_weight) is None
+    return assignment in (ASSIGNMENT_MATCHED, ASSIGNMENT_SELECTED, ASSIGNMENT_DEFAULT)
+
+
 def sanitize_last_weights(raw: Any, users: Iterable[str]) -> dict[str, float]:
     """Keep only valid stored weights of users that still exist."""
     if not isinstance(raw, Mapping):

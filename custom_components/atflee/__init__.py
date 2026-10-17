@@ -97,7 +97,12 @@ def _users_snapshot(coordinator: AtfleeDataUpdateCoordinator) -> dict[str, tuple
 
 async def async_unload_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bool:
     """Unload an Atflee config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        # A pending delayed save would otherwise outlive the unload (and could
+        # recreate the file after removal or be missed by a quick reload).
+        await entry.runtime_data.async_flush_last_weights()
+    return unloaded
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> None:

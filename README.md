@@ -86,6 +86,10 @@ With two or more users and the select on `auto`, the first weight of a measureme
 3. If nobody can be matched, the **default user** is assumed (`assignment: fallback`). But if the weight differs from the default user's reference weight by more than **Fallback max weight difference** (default 15 kg), the measurement is **not recorded for anyone** and the `atflee_unassigned_measurement` event is fired with `address`, `weight`, `timestamp`, `reason` (`no_candidates`, `out_of_tolerance` or `ambiguous`) and the `candidates` considered (`user_id`, `name`, `reference_weight_kg`, `difference_kg`). Use it for a notification or a manual assignment automation.
 4. A user picked on the select is always used (`assignment: selected`), and with only one user there is nothing to decide (`assignment: default`).
 
+The decision is made on the first *stable* weight, not on the unstable readings while the weight is still settling; until then, with several users in `auto`, those readings only update the scale diagnostics.
+
+Each stable weight becomes the user's reference weight for next time, except for a `fallback` measurement: that only sets a reference for a user who has none (neither a stored nor an expected weight), so a guest cannot shift the default user's reference.
+
 Every user sensor carries an `assignment` attribute: `matched`, `fallback`, `selected` or `default`.
 
 The body-composition profile is sent to the scale when it connects, before the weight is known, so it is the one of the selected or default user. If the weight then identifies somebody else, the scale's own body fat value is discarded and body fat, BMI and the other metrics are calculated by the integration for the identified user from the raw impedances.

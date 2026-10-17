@@ -43,10 +43,11 @@ from .session_report import ARM, MEASURE, SessionTrace, build_session_report
 from .user_profile import (
     ActiveUserSelection,
     Attribution,
-    attribute_weight,
+    SessionAttributor,
     profile_from_data,
     resolve_user_id,
     sanitize_last_weights,
+    should_store_weight,
     user_slot,
 )
 
@@ -122,11 +123,12 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         # first weight so a later select change cannot split one measurement.
         self._session_user_id: str | None = None
         # How the session's weight was attributed; "unassigned" means nobody.
-        self._session_attribution: Attribution | None = None
+        self._attributor = SessionAttributor()
         # User the B1 profile was pushed for in this session (None if none was).
         self._profile_sent_user_id: str | None = None
         # Last stable weight per user (subentry id), persisted for identification.
         self._last_weights: dict[str, float] = {}
+        self._weights_dirty = False
         self._store: Store[dict[str, dict[str, float]]] = Store(
             hass, LAST_WEIGHTS_STORE_VERSION, last_weights_store_key(entry.entry_id)
         )
@@ -147,11 +149,22 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         if isinstance(raw, dict) and len(raw) != len(self._last_weights):
             self._schedule_weights_save()
 
+    async def async_flush_last_weights(self) -> None:
+        """Write pending weights now (also cancels a delayed save)."""
+        if self._weights_dirty:
+            self._weights_dirty = False
+            await self._store.async_save({"last_weights": dict(self._last_weights)})
+
     def _schedule_weights_save(self) -> None:
+        self._weights_dirty = True
         self._store.async_delay_save(
-            lambda: {"last_weights": dict(self._last_weights)},
+            self._delayed_weights,
             LAST_WEIGHTS_SAVE_DELAY_SECONDS,
         )
+
+    def _delayed_weights(self) -> dict[str, dict[str, float]]:
+        self._weights_dirty = False
+        return {"last_weights": dict(self._last_weights)}
 
     async def async_start(self) -> None:
         """Start advertisement-driven update flow."""
@@ -372,21 +385,21 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             users, self.active_user_id, self.entry.options.get(CONF_DEFAULT_USER)
         )
 
-    def _attribute_session(self, weight_kg: float) -> Attribution | None:
-        """Decide (once per session) whose measurement the first weight is.
+    def _attribute_session(
+        self, weight_kg: float | None, is_stable: bool | None
+    ) -> Attribution | None:
+        """Decide (once per session) whose measurement the weight is.
 
-        Locks the session user and, if the weight belongs to nobody, the
-        session as unassigned (event fired once). None while there is no weight
-        or no user, and when the decision was already made.
+        Only a stable weight decides; the unstable ramp-up readings before it
+        decide nothing. Locks the session user and, if the weight belongs to
+        nobody, the session as unassigned (event fired once). Returns the
+        attribution only at the deciding packet.
         """
-        if self._session_attribution is not None or weight_kg <= 0:
-            return None
         users = {sid: sub.data for sid, sub in self.user_subentries().items()}
-        if not users:
-            return None
         options = self.entry.options
-        attribution = attribute_weight(
+        attribution = self._attributor.observe(
             weight_kg,
+            is_stable,
             users,
             self._last_weights,
             active_id=self.active_user_id,
@@ -399,10 +412,11 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                 options.get(CONF_FALLBACK_MAX_DELTA_KG, DEFAULT_FALLBACK_MAX_DELTA_KG)
             ),
         )
-        self._session_attribution = attribution
+        if attribution is None:
+            return None
         self._session_user_id = attribution.user_id
         if attribution.user_id is None:
-            self._fire_unassigned(weight_kg, attribution, users)
+            self._fire_unassigned(weight_kg or 0.0, attribution, users)
         else:
             _LOGGER.debug(
                 "Atflee weight %.1f kg attributed to %s (%s%s)",
@@ -445,12 +459,17 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
     @property
     def _session_unassigned(self) -> bool:
         return (
-            self._session_attribution is not None
-            and self._session_attribution.assignment == ASSIGNMENT_UNASSIGNED
+            self._attributor.attribution is not None
+            and self._attributor.attribution.assignment == ASSIGNMENT_UNASSIGNED
         )
 
-    def _remember_weight(self, user_id: str, weight_kg: float) -> None:
+    def _remember_weight(self, user_id: str, weight_kg: float, assignment: str | None) -> None:
         """Store a user's stable weight as the reference for the next session."""
+        sub = self.entry.subentries.get(user_id)
+        if sub is None or not should_store_weight(
+            assignment, sub.data, self._last_weights.get(user_id)
+        ):
+            return
         if self._last_weights.get(user_id) != weight_kg:
             self._last_weights[user_id] = weight_kg
             self._schedule_weights_save()
@@ -458,7 +477,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
     def _finish_session_user(self, *, cancelled: bool) -> None:
         """Release the session's user lock; a consumed selection falls back to auto."""
         locked, self._session_user_id = self._session_user_id, None
-        self._session_attribution = None
+        self._attributor.reset()
         self._profile_sent_user_id = None
         if not cancelled and locked is not None and locked == self._selection.user_id:
             self._cancel_selection_timer()
@@ -715,15 +734,19 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     if measurement.measure_state == "handshake":
                         continue
 
-                    self._attribute_session(measurement.weight_kg or 0)
+                    self._attribute_session(measurement.weight_kg, measurement.is_stable)
                     user_id = self._session_user_id
                     unassigned = self._session_unassigned
-                    if user_id is None and not unassigned:
-                        # No weight yet: control packets go to the usual user.
-                        user_id = self._resolve_user()
-                    assignment = self._session_attribution
+                    decided = self._attributor.attribution
+                    has_users = bool(self.user_subentries())
+                    if decided is None and has_users:
+                        # Before the stable weight: a selected or only user gets
+                        # the live readings, in auto mode they only update the
+                        # scale-level state (the weight may be a ramp-up value).
+                        if self.active_user_id or len(self.user_subentries()) == 1:
+                            user_id = self._resolve_user()
                     measurement.assignment = (
-                        assignment.assignment if assignment and user_id else None
+                        decided.assignment if decided and user_id else None
                     )
                     # The scale computed its composition for the profile it was
                     # given; for anyone else it is wrong, so it is recomputed
@@ -733,7 +756,10 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         and user_id != self._profile_sent_user_id
                     ):
                         measurement.drop_scale_composition()
-                    if not unassigned:
+                    # Without a user (undecided or unassigned) there is no profile
+                    # to compute with; with no users at all the warning is wanted.
+                    no_profile = unassigned or (user_id is None and has_users)
+                    if not no_profile:
                         self._apply_body_composition(measurement, user_id)
 
                     # Ignore control/heartbeat packets that do not carry any mapped value.
@@ -769,7 +795,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
 
                     measurement = self._merge_with_previous_measurement(measurement, user_id)
 
-                    profile = None if unassigned else self._profile(user_id)
+                    profile = None if no_profile else self._profile(user_id)
                     if profile and measurement.bmi is None and measurement.weight_kg is not None:
                         height_m = profile[0] / 100.0
                         measurement.bmi = round(measurement.weight_kg / (height_m * height_m), 2)
@@ -779,7 +805,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         and measurement.is_stable
                         and measurement.weight_kg
                     ):
-                        self._remember_weight(user_id, measurement.weight_kg)
+                        self._remember_weight(
+                            user_id, measurement.weight_kg, measurement.assignment
+                        )
 
                     self.async_set_updated_data(
                         self._build_state(

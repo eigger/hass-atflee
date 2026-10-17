@@ -246,3 +246,82 @@ def test_assignment_is_not_carried_between_measurements() -> None:
     new = AtfleeMeasurement(weight_kg=71.0)
     new.merge_with_previous(prev)
     assert new.assignment is None
+
+
+# --- session decision timing ---------------------------------------------------
+
+
+def _observe(att, weight, stable, users, last=None):
+    return att.observe(weight, stable, users, last or {}, default_id="a")
+
+
+def test_unstable_ramp_does_not_decide_the_session() -> None:
+    users = _users()
+    last = {"a": 60.0, "b": 80.0}
+    att = up.SessionAttributor()
+    # A2 ramp: 35 kg would have been unassigned (or a wrong match) if it decided.
+    for weight in (35.0, 52.0, 71.0):
+        assert _observe(att, weight, False, users, last) is None
+        assert att.attribution is None
+    decided = _observe(att, 80.0, True, users, last)
+    assert (decided.assignment, decided.user_id) == ("matched", "b")
+
+
+def test_session_is_decided_once() -> None:
+    users = _users()
+    last = {"a": 60.0, "b": 80.0}
+    att = up.SessionAttributor()
+    assert _observe(att, 80.0, True, users, last).user_id == "b"
+    assert _observe(att, 60.0, True, users, last) is None
+    assert att.attribution.user_id == "b"
+    att.reset()
+    assert _observe(att, 60.0, True, users, last).user_id == "a"
+
+
+def test_no_decision_without_weight_or_users() -> None:
+    att = up.SessionAttributor()
+    assert _observe(att, None, True, _users()) is None
+    assert _observe(att, 0, True, _users()) is None
+    assert _observe(att, 70.0, True, {}) is None
+    assert att.attribution is None
+
+
+def test_stable_unassigned_weight_decides_unassigned() -> None:
+    att = up.SessionAttributor()
+    result = _observe(att, 120.0, True, _users(), {"a": 60.0, "b": 80.0})
+    assert result.assignment == "unassigned"
+
+
+# --- storing weights -----------------------------------------------------------
+
+
+def test_should_store_weight_by_assignment() -> None:
+    user = {"expected_weight_kg": 60.0}
+    for assignment in ("matched", "selected", "default"):
+        assert up.should_store_weight(assignment, user, 61.0)
+    assert not up.should_store_weight(None, user, None)
+    assert not up.should_store_weight("unassigned", user, None)
+
+
+def test_fallback_only_seeds_a_user_without_reference() -> None:
+    assert up.should_store_weight("fallback", {}, None)
+    assert not up.should_store_weight("fallback", {}, 60.0)
+    assert not up.should_store_weight("fallback", {"expected_weight_kg": 60.0}, None)
+
+
+def test_guest_fallback_does_not_shift_the_default_users_reference() -> None:
+    users = _users()
+    last = {"a": 60.0, "b": 75.0}
+
+    def weigh(weight):
+        result = _attr(weight, users, last, default_id="a")
+        if up.should_store_weight(result.assignment, users[result.user_id], last.get(result.user_id)):
+            last[result.user_id] = weight
+        return result
+
+    guest = weigh(68.5)  # between both, outside the margin -> fallback to a
+    assert (guest.assignment, guest.user_id) == ("fallback", "a")
+    assert last["a"] == 60.0
+    b = weigh(73.0)
+    assert (b.assignment, b.user_id) == ("matched", "b")
+    assert last == {"a": 60.0, "b": 73.0}
