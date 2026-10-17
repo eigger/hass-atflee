@@ -6,12 +6,15 @@ be unit-tested on its own.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
+from time import monotonic
 from typing import Any
 
 from .const import (
+    ACTIVE_USER_AUTO,
+    ACTIVE_USER_TIMEOUT_SECONDS,
     CONF_BIRTH_DATE,
     CONF_EXPECTED_WEIGHT_KG,
     CONF_HEIGHT_CM,
@@ -131,7 +134,7 @@ def profile_from_data(data: Mapping[str, Any]) -> UserProfile | None:
     return UserProfile(height_cm=height, birth_date=birth, sex=sex)
 
 
-def _slot(item: Mapping[str, Any]) -> int:
+def user_slot(item: Mapping[str, Any]) -> int:
     try:
         return int(item.get(CONF_SLOT, 0))
     except (TypeError, ValueError):
@@ -140,7 +143,79 @@ def _slot(item: Mapping[str, Any]) -> int:
 
 def primary_user_id(users: Mapping[str, Mapping[str, Any]]) -> str | None:
     """Return the subentry id of the user in the lowest slot, or None without users."""
-    return min(users, key=lambda sid: (_slot(users[sid]), sid), default=None)
+    return min(users, key=lambda sid: (user_slot(users[sid]), sid), default=None)
+
+
+def resolve_user_id(
+    users: Mapping[str, Mapping[str, Any]],
+    active_id: str | None,
+    default_id: str | None,
+) -> str | None:
+    """Pick the user: the selected one, else the default, else the lowest slot.
+
+    Ids that no longer exist are skipped; None only when there are no users.
+    """
+    if active_id in users:
+        return active_id
+    if default_id in users:
+        return default_id
+    return primary_user_id(users)
+
+
+def user_option_labels(users: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:
+    """Return ``{subentry_id: label}`` for the active-user select, in slot order.
+
+    Labels are the user names. Duplicate names (or a name equal to the "auto"
+    option) get a numeric suffix so every label maps back to one user.
+    """
+    labels: dict[str, str] = {}
+    taken = {ACTIVE_USER_AUTO}
+    for sid in sorted(users, key=lambda s: (user_slot(users[s]), s)):
+        base = str(users[sid].get(CONF_USER_NAME) or "").strip() or sid
+        label, n = base, 1
+        while label in taken:
+            n += 1
+            label = f"{base} ({n})"
+        taken.add(label)
+        labels[sid] = label
+    return labels
+
+
+class ActiveUserSelection:
+    """The user picked on the select, valid for one session or a time limit.
+
+    Pure state with an injectable clock; the coordinator owns the real timer and
+    calls ``clear`` when a session consumed the selection.
+    """
+
+    def __init__(
+        self,
+        timeout: float = ACTIVE_USER_TIMEOUT_SECONDS,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        self._timeout = timeout
+        self._clock = clock
+        self._user_id: str | None = None
+        self._selected_at = 0.0
+
+    @property
+    def timeout(self) -> float:
+        return self._timeout
+
+    @property
+    def user_id(self) -> str | None:
+        """The selected subentry id, or None (auto) when unset or expired."""
+        if self._user_id is not None and self._clock() - self._selected_at >= self._timeout:
+            self._user_id = None
+        return self._user_id
+
+    def select(self, user_id: str | None) -> None:
+        """Select a user (None = auto) and restart the timeout."""
+        self._user_id = user_id
+        self._selected_at = self._clock()
+
+    def clear(self) -> None:
+        self._user_id = None
 
 
 def user_unique_id(address: str, subentry_id: str, key: str) -> str:

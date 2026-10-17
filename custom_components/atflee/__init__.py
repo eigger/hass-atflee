@@ -10,13 +10,21 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 
 from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
-from .const import CONF_ENABLE_BODY_COMP
+from .const import CONF_DEFAULT_USER, CONF_ENABLE_BODY_COMP
 from .entity import scale_device_info
 from .user_profile import reload_needed
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SWITCH]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.SWITCH,
+    Platform.SELECT,
+]
+
+# Options the coordinator reads at use time, so changing them needs no reload.
+LIVE_OPTION_KEYS = (CONF_ENABLE_BODY_COMP, CONF_DEFAULT_USER)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bool:
@@ -40,7 +48,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bo
 
     # Entities are created per user subentry, so adding, removing or editing a
     # user needs a reload, as does any option except the body composition
-    # switch, which the coordinator reads live.
+    # switch and the default user, which the coordinator reads live.
     users = _users_snapshot(coordinator)
     options = dict(entry.options)
 
@@ -50,7 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bo
             _users_snapshot(entry.runtime_data),
             options,
             entry.options,
-            (CONF_ENABLE_BODY_COMP,),
+            LIVE_OPTION_KEYS,
         ):
             await hass.config_entries.async_reload(entry.entry_id)
 

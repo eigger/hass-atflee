@@ -53,7 +53,11 @@
         "title": "앳플리 옵션",
         "data": {
           "notify_timeout_seconds": "유휴 연결 해제 시간(초)",
-          "enable_body_composition": "체성분 측정 활성화"
+          "enable_body_composition": "체성분 측정 활성화",
+          "default_user": "기본 사용자"
+        },
+        "data_description": {
+          "default_user": "선택된 사용자가 없을 때 사용합니다. 비워 두면 첫 번째 사용자입니다."
         }
       }
     }
@@ -156,6 +160,14 @@
     "binary_sensor": {
       "ble_connection": {
         "name": "연결 상태"
+      }
+    },
+    "select": {
+      "active_user": {
+        "name": "현재 사용자",
+        "state": {
+          "auto": "자동"
+        }
       }
     },
     "switch": {
