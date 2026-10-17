@@ -164,12 +164,13 @@ class MigrationResult:
 
 
 def migrate_v1_to_v2(
-    data: Mapping[str, Any], options: Mapping[str, Any], title: str
+    data: Mapping[str, Any], options: Mapping[str, Any]
 ) -> MigrationResult:
     """Split the single-user profile out of a v1 entry.
 
     Options take precedence over data, like the v1 runtime lookups did. Missing
-    or malformed values fall back to the defaults.
+    or malformed values fall back to the defaults. The user is always named
+    "User 1" (the entry title is the scale's name, not a person's).
     """
 
     def current(key: str, default: Any) -> Any:
@@ -192,7 +193,7 @@ def migrate_v1_to_v2(
     if sex not in SEXES:
         sex = DEFAULT_SEX
 
-    name = (title or "").strip() or DEFAULT_USER_NAME
+    name = DEFAULT_USER_NAME
     return MigrationResult(
         user_title=name,
         user_data={

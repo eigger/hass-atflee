@@ -116,23 +116,22 @@ def test_migration_moves_profile_into_user() -> None:
             "notify_timeout_seconds": 12,
         },
         {"height_cm": 175, "enable_body_composition": True},
-        "My Scale",
     )
     assert result.user_data == {
-        "name": "My Scale",
+        "name": "User 1",
         "height_cm": 175,  # options win over data
         "birth_date": "1985-01-01",
         "sex": "female",
         "slot": 1,
     }
-    assert result.user_title == "My Scale"
+    assert result.user_title == "User 1"
     assert result.entry_data == {"address": "AA:BB", "notify_timeout_seconds": 12}
     assert result.entry_options == {"enable_body_composition": True}
 
 
 def test_migration_uses_defaults_for_missing_or_bad_values() -> None:
     result = up.migrate_v1_to_v2(
-        {"address": "AA:BB"}, {"birth_year": "x", "sex": "robot", "height_cm": 9999}, ""
+        {"address": "AA:BB"}, {"birth_year": "x", "sex": "robot", "height_cm": 9999}
     )
     assert result.user_data == {
         "name": "User 1",
@@ -146,8 +145,8 @@ def test_migration_uses_defaults_for_missing_or_bad_values() -> None:
 
 
 def test_migration_is_idempotent_on_migrated_data() -> None:
-    first = up.migrate_v1_to_v2({"address": "AA:BB", "height_cm": 160}, {}, "S")
-    again = up.migrate_v1_to_v2(first.entry_data, first.entry_options, "S")
+    first = up.migrate_v1_to_v2({"address": "AA:BB", "height_cm": 160}, {})
+    again = up.migrate_v1_to_v2(first.entry_data, first.entry_options)
     assert again.entry_data == first.entry_data
     assert again.entry_options == first.entry_options
 

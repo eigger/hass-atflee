@@ -51,7 +51,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> 
         return False
 
     if entry.version == 1:
-        result = migrate_v1_to_v2(entry.data, entry.options, entry.title)
+        result = migrate_v1_to_v2(entry.data, entry.options)
 
         # Add the subentry first: if we are interrupted before the version is
         # bumped, the next run sees the subentry and does not add a second one.
