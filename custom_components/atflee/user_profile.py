@@ -15,12 +15,20 @@ from typing import Any
 from .const import (
     ACTIVE_USER_AUTO,
     ACTIVE_USER_TIMEOUT_SECONDS,
+    ASSIGNMENT_DEFAULT,
+    ASSIGNMENT_FALLBACK,
+    ASSIGNMENT_MATCHED,
+    ASSIGNMENT_SELECTED,
+    ASSIGNMENT_UNASSIGNED,
     CONF_BIRTH_DATE,
     CONF_EXPECTED_WEIGHT_KG,
     CONF_HEIGHT_CM,
     CONF_SEX,
     CONF_SLOT,
     CONF_USER_NAME,
+    DEFAULT_FALLBACK_MAX_DELTA_KG,
+    DEFAULT_MATCH_TOLERANCE_KG,
+    MATCH_MARGIN_KG,
     MAX_EXPECTED_WEIGHT_KG,
     MAX_HEIGHT_CM,
     MIN_BIRTH_YEAR,
@@ -160,6 +168,112 @@ def resolve_user_id(
     if default_id in users:
         return default_id
     return primary_user_id(users)
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """A user considered for a measured weight."""
+
+    user_id: str
+    reference_kg: float
+    delta_kg: float  # absolute distance to the measured weight
+
+
+@dataclass(frozen=True)
+class Attribution:
+    """Who a session's measurement belongs to, and how that was decided.
+
+    ``assignment`` is one of the ``ASSIGNMENT_*`` values; ``user_id`` is None only
+    when it is ``unassigned`` (or there are no users at all). ``reason`` explains
+    why identification failed (fallback / unassigned), ``candidates`` are the
+    users that had a reference weight, nearest first.
+    """
+
+    assignment: str
+    user_id: str | None
+    reason: str | None = None
+    candidates: tuple[Candidate, ...] = ()
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def reference_weight(
+    user: Mapping[str, Any], last_weight: Any = None
+) -> float | None:
+    """A user's reference weight: the last measured one, else the expected one."""
+    last = _float_or_none(last_weight)
+    return last if last is not None else _float_or_none(user.get(CONF_EXPECTED_WEIGHT_KG))
+
+
+def attribute_weight(
+    weight_kg: float,
+    users: Mapping[str, Mapping[str, Any]],
+    last_weights: Mapping[str, float],
+    *,
+    active_id: str | None = None,
+    default_id: str | None = None,
+    tolerance_kg: float = DEFAULT_MATCH_TOLERANCE_KG,
+    margin_kg: float = MATCH_MARGIN_KG,
+    fallback_max_delta_kg: float = DEFAULT_FALLBACK_MAX_DELTA_KG,
+) -> Attribution:
+    """Decide whose measurement a weight is.
+
+    A selected user always wins and a lone user is always that user. Otherwise
+    the user whose reference weight is nearest is taken if it is within
+    ``tolerance_kg`` and at least ``margin_kg`` closer than the runner-up. If that
+    fails, the default user is assumed, unless the weight is more than
+    ``fallback_max_delta_kg`` away from the default user's reference weight; then
+    the measurement belongs to nobody.
+    """
+    if not users:
+        return Attribution(ASSIGNMENT_UNASSIGNED, None, "no_users")
+    if active_id in users:
+        return Attribution(ASSIGNMENT_SELECTED, active_id)
+    if len(users) == 1:
+        return Attribution(ASSIGNMENT_DEFAULT, next(iter(users)))
+
+    candidates: list[Candidate] = []
+    for sid, data in users.items():
+        ref = reference_weight(data, last_weights.get(sid))
+        if ref is not None:
+            candidates.append(Candidate(sid, ref, round(abs(weight_kg - ref), 3)))
+    candidates.sort(key=lambda c: (c.delta_kg, user_slot(users[c.user_id]), c.user_id))
+    ranked = tuple(candidates)
+
+    reason: str | None
+    if not ranked:
+        reason = "no_candidates"
+    elif ranked[0].delta_kg > tolerance_kg:
+        reason = "out_of_tolerance"
+    elif len(ranked) > 1 and ranked[1].delta_kg - ranked[0].delta_kg < margin_kg:
+        reason = "ambiguous"
+    else:
+        return Attribution(ASSIGNMENT_MATCHED, ranked[0].user_id, candidates=ranked)
+
+    fallback_id = resolve_user_id(users, None, default_id)
+    fallback_ref = reference_weight(users[fallback_id], last_weights.get(fallback_id))
+    if fallback_ref is not None and abs(weight_kg - fallback_ref) > fallback_max_delta_kg:
+        return Attribution(ASSIGNMENT_UNASSIGNED, None, reason, ranked)
+    return Attribution(ASSIGNMENT_FALLBACK, fallback_id, reason, ranked)
+
+
+def sanitize_last_weights(raw: Any, users: Iterable[str]) -> dict[str, float]:
+    """Keep only valid stored weights of users that still exist."""
+    if not isinstance(raw, Mapping):
+        return {}
+    keep = set(users)
+    result: dict[str, float] = {}
+    for sid, value in raw.items():
+        weight = _float_or_none(value)
+        if sid in keep and weight is not None:
+            result[sid] = weight
+    return result
 
 
 def user_option_labels(users: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:

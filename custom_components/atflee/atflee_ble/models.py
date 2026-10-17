@@ -41,6 +41,25 @@ _CARRIED_FIELDS = (
 )
 
 
+# Values the scale computes itself (from the profile it was given); they are
+# not valid for a user other than the one the profile was sent for.
+_SCALE_COMPOSITION_FIELDS = (
+    "bmi",
+    "body_fat_pct",
+    "subcutaneous_fat_pct",
+    "visceral_fat",
+    "muscle_pct",
+    "muscle_mass",
+    "bmr",
+    "bone_mass",
+    "moisture_pct",
+    "protein_pct",
+    "skeletal_muscle_pct",
+    "physical_age",
+    "body_score",
+)
+
+
 @dataclass(slots=True)
 class AtfleeMeasurement:
     """Single body measurement payload."""
@@ -87,6 +106,8 @@ class AtfleeMeasurement:
     is_stable: bool | None = None
     is_body_composition_complete: bool = False
     raw_hex: str | None = None
+    # How the measurement was attributed to its user (set by the coordinator).
+    assignment: str | None = None
 
     # --- 계산된 체성분 (같은 측정의 체중 x 퍼센트로 계산해 저장) ---
     body_fat_mass: float | None = None          # 체지방량 kg
@@ -120,6 +141,11 @@ class AtfleeMeasurement:
         ):
             if pct_field in fresh:
                 setattr(self, mass_field, mass(getattr(self, pct_field)))
+
+    def drop_scale_composition(self) -> None:
+        """Forget composition values the scale computed for another profile."""
+        for name in _SCALE_COMPOSITION_FIELDS:
+            setattr(self, name, None)
 
     def merge_with_previous(self, prev: AtfleeMeasurement | None) -> None:
         """Keep the last known values when this packet omits them.

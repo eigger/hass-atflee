@@ -8,9 +8,20 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.storage import Store
 
-from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
-from .const import CONF_DEFAULT_USER, CONF_ENABLE_BODY_COMP
+from .coordinator import (
+    AtfleeConfigEntry,
+    AtfleeDataUpdateCoordinator,
+    last_weights_store_key,
+)
+from .const import (
+    CONF_DEFAULT_USER,
+    CONF_ENABLE_BODY_COMP,
+    CONF_FALLBACK_MAX_DELTA_KG,
+    CONF_MATCH_TOLERANCE_KG,
+    LAST_WEIGHTS_STORE_VERSION,
+)
 from .entity import scale_device_info
 from .user_profile import reload_needed
 
@@ -24,12 +35,18 @@ PLATFORMS: list[Platform] = [
 ]
 
 # Options the coordinator reads at use time, so changing them needs no reload.
-LIVE_OPTION_KEYS = (CONF_ENABLE_BODY_COMP, CONF_DEFAULT_USER)
+LIVE_OPTION_KEYS = (
+    CONF_ENABLE_BODY_COMP,
+    CONF_DEFAULT_USER,
+    CONF_MATCH_TOLERANCE_KG,
+    CONF_FALLBACK_MAX_DELTA_KG,
+)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bool:
     """Set up Atflee from a config entry."""
     coordinator = AtfleeDataUpdateCoordinator(hass, entry)
+    await coordinator.async_load_last_weights()
     await coordinator.async_start()
     # Registered right after start so the BLE callbacks are released on every
     # exit path, including a failed first refresh (ConfigEntryNotReady retries).
@@ -48,7 +65,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bo
 
     # Entities are created per user subentry, so adding, removing or editing a
     # user needs a reload, as does any option except the body composition
-    # switch and the default user, which the coordinator reads live.
+    # switch, the default user and the identification thresholds, which the
+    # coordinator reads live.
     users = _users_snapshot(coordinator)
     options = dict(entry.options)
 
@@ -81,3 +99,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> b
     """Unload an Atflee config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
+
+async def async_remove_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> None:
+    """Delete the stored last weights together with the config entry."""
+    await Store(
+        hass, LAST_WEIGHTS_STORE_VERSION, last_weights_store_key(entry.entry_id)
+    ).async_remove()

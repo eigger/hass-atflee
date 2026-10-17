@@ -11,6 +11,31 @@ CONF_ENABLE_BODY_COMP = "enable_body_composition"
 # Scale-level option: subentry id of the user assumed when nobody is selected.
 CONF_DEFAULT_USER = "default_user"
 
+# Scale-level options for weight-based user identification (auto mode).
+CONF_MATCH_TOLERANCE_KG = "match_tolerance_kg"
+CONF_FALLBACK_MAX_DELTA_KG = "fallback_max_delta_kg"
+DEFAULT_MATCH_TOLERANCE_KG = 3.0
+MIN_MATCH_TOLERANCE_KG = 0.5
+MAX_MATCH_TOLERANCE_KG = 10.0
+DEFAULT_FALLBACK_MAX_DELTA_KG = 15.0
+MIN_FALLBACK_MAX_DELTA_KG = 5.0
+MAX_FALLBACK_MAX_DELTA_KG = 100.0
+# The best candidate must be this much closer than the runner-up.
+MATCH_MARGIN_KG = 1.5
+
+# Fired when a weight fits nobody and is too far from the default user too.
+EVENT_UNASSIGNED_MEASUREMENT = "atflee_unassigned_measurement"
+
+# How a measurement was attributed (``assignment`` state attribute).
+ASSIGNMENT_SELECTED = "selected"  # picked on the Active user select
+ASSIGNMENT_MATCHED = "matched"  # identified by weight
+ASSIGNMENT_FALLBACK = "fallback"  # not identifiable, default user assumed
+ASSIGNMENT_DEFAULT = "default"  # only one user, nothing to decide
+ASSIGNMENT_UNASSIGNED = "unassigned"  # written to nobody
+
+LAST_WEIGHTS_STORE_VERSION = 1
+LAST_WEIGHTS_SAVE_DELAY_SECONDS = 10
+
 # State of the "Active user" select meaning "no explicit selection".
 ACTIVE_USER_AUTO = "auto"
 # The selection falls back to auto after this long if no session consumed it.

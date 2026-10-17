@@ -29,7 +29,7 @@
           "expected_weight_kg": "Expected weight (kg, optional)"
         },
         "data_description": {
-          "expected_weight_kg": "Used later to tell users apart by weight."
+          "expected_weight_kg": "Used to tell users apart by weight until a first weight is stored."
         }
       }
     },
@@ -54,10 +54,14 @@
         "data": {
           "notify_timeout_seconds": "Idle disconnect timeout (seconds)",
           "enable_body_composition": "Enable body composition measurement",
-          "default_user": "Default user"
+          "default_user": "Default user",
+          "match_tolerance_kg": "Weight match tolerance (kg)",
+          "fallback_max_delta_kg": "Fallback max weight difference (kg)"
         },
         "data_description": {
-          "default_user": "Used when no user is selected. Empty uses the first user."
+          "default_user": "Used when no user is selected. Empty uses the first user.",
+          "match_tolerance_kg": "In auto mode a user is picked when the weight is this close to their last weight. Needs at least two users.",
+          "fallback_max_delta_kg": "If nobody matches and the weight differs from the default user's last weight by more than this, the measurement is not recorded and an atflee_unassigned_measurement event is fired."
         }
       }
     }
@@ -133,7 +137,7 @@
             "expected_weight_kg": "Expected weight (kg, optional)"
           },
           "data_description": {
-            "expected_weight_kg": "Used later to tell users apart by weight."
+            "expected_weight_kg": "Used to tell users apart by weight until a first weight is stored."
           }
         },
         "reconfigure": {
@@ -146,7 +150,7 @@
             "expected_weight_kg": "Expected weight (kg, optional)"
           },
           "data_description": {
-            "expected_weight_kg": "Used later to tell users apart by weight."
+            "expected_weight_kg": "Used to tell users apart by weight until a first weight is stored."
           }
         }
       },
