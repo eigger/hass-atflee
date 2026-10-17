@@ -6,19 +6,26 @@ DOMAIN = "atflee"
 
 CONF_NOTIFY_TIMEOUT_SECONDS = "notify_timeout_seconds"
 CONF_HEIGHT_CM = "height_cm"
-CONF_BIRTH_YEAR = "birth_year"
 CONF_SEX = "sex"
 CONF_ENABLE_BODY_COMP = "enable_body_composition"
 
+# Per-user profile keys, stored in the data of a "user" config subentry.
+SUBENTRY_TYPE_USER = "user"
+CONF_USER_NAME = "name"
+CONF_BIRTH_DATE = "birth_date"
+CONF_SLOT = "slot"
+CONF_EXPECTED_WEIGHT_KG = "expected_weight_kg"
+SEXES: tuple[str, ...] = ("male", "female")
+MIN_EXPECTED_WEIGHT_KG = 10
+MAX_EXPECTED_WEIGHT_KG = 300
+
 DEFAULT_NOTIFY_TIMEOUT_SECONDS = 12
 DEFAULT_HEIGHT_CM = 170
-DEFAULT_BIRTH_YEAR = 1990
 DEFAULT_SEX = "male"
 DEFAULT_ENABLE_BODY_COMP = False
 MIN_HEIGHT_CM = 80
 MAX_HEIGHT_CM = 250
 MIN_BIRTH_YEAR = 1900
-MAX_BIRTH_YEAR = 2026
 
 
 # - Advertisement explicitly contained 0xFFB0 and 0x1530 services.

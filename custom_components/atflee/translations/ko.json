@@ -6,9 +6,6 @@
         "description": "검색된 장치를 선택하세요. 광고 수신 시 자동 접속하여 측정을 진행합니다.",
         "data": {
           "address": "블루투스 주소",
-          "height_cm": "사용자 키(cm)",
-          "birth_year": "출생 년도",
-          "sex": "성별 (male/female)",
           "notify_timeout_seconds": "유휴 연결 해제 시간(초)",
           "enable_body_composition": "체성분 측정 활성화"
         }
@@ -17,16 +14,37 @@
         "title": "앳플리 장치 발견",
         "description": "{name} 장치의 측정 세션 옵션을 설정하세요.",
         "data": {
-          "height_cm": "사용자 키(cm)",
-          "birth_year": "출생 년도",
-          "sex": "성별 (male/female)",
           "notify_timeout_seconds": "유휴 연결 해제 시간(초)",
           "enable_body_composition": "체성분 측정 활성화"
+        }
+      },
+      "first_user": {
+        "title": "첫 번째 사용자",
+        "description": "이 체중계를 사용하는 사람의 프로필을 입력하세요. 사용자는 나중에 통합 구성요소 페이지에서 추가할 수 있습니다.",
+        "data": {
+          "name": "이름",
+          "height_cm": "키(cm)",
+          "birth_date": "생년월일",
+          "sex": "성별",
+          "expected_weight_kg": "예상 체중(kg, 선택)"
+        },
+        "data_description": {
+          "expected_weight_kg": "나중에 체중으로 사용자를 구분할 때 사용합니다."
         }
       }
     },
     "abort": {
       "no_devices_found": "블루투스 장치를 찾지 못했습니다."
+    },
+    "error": {
+      "name_required": "이름을 입력하세요.",
+      "name_exists": "같은 이름의 사용자가 이미 있습니다.",
+      "invalid_height": "키는 80~250cm 사이여야 합니다.",
+      "invalid_birth_date": "올바른 생년월일을 입력하세요.",
+      "birth_date_in_future": "생년월일은 미래일 수 없습니다.",
+      "birth_date_too_old": "생년월일이 너무 오래되었습니다.",
+      "invalid_sex": "남성 또는 여성을 선택하세요.",
+      "invalid_expected_weight": "예상 체중은 10~300kg 사이여야 합니다."
     }
   },
   "options": {
@@ -34,9 +52,6 @@
       "init": {
         "title": "앳플리 옵션",
         "data": {
-          "height_cm": "사용자 키(cm)",
-          "birth_year": "출생 년도",
-          "sex": "성별 (male/female)",
           "notify_timeout_seconds": "유휴 연결 해제 시간(초)",
           "enable_body_composition": "체성분 측정 활성화"
         }
@@ -143,26 +158,58 @@
         "name": "연결 상태"
       }
     },
-    "number": {
-      "height_cm": {
-        "name": "사용자 키"
-      },
-      "birth_year": {
-        "name": "사용자 출생 연도"
-      }
-    },
-    "select": {
-      "sex": {
-        "name": "사용자 성별",
-        "state": {
-          "male": "남성",
-          "female": "여성"
-        }
-      }
-    },
     "switch": {
       "enable_body_comp": {
         "name": "체성분 측정 활성화"
+      }
+    }
+  },
+  "config_subentries": {
+    "user": {
+      "entry_type": "사용자",
+      "initiate_flow": {
+        "user": "사용자 추가"
+      },
+      "step": {
+        "user": {
+          "title": "사용자 추가",
+          "data": {
+            "name": "이름",
+            "height_cm": "키(cm)",
+            "birth_date": "생년월일",
+            "sex": "성별",
+            "expected_weight_kg": "예상 체중(kg, 선택)"
+          },
+          "data_description": {
+            "expected_weight_kg": "나중에 체중으로 사용자를 구분할 때 사용합니다."
+          }
+        },
+        "reconfigure": {
+          "title": "사용자 재설정",
+          "data": {
+            "name": "이름",
+            "height_cm": "키(cm)",
+            "birth_date": "생년월일",
+            "sex": "성별",
+            "expected_weight_kg": "예상 체중(kg, 선택)"
+          },
+          "data_description": {
+            "expected_weight_kg": "나중에 체중으로 사용자를 구분할 때 사용합니다."
+          }
+        }
+      },
+      "error": {
+        "name_required": "이름을 입력하세요.",
+        "name_exists": "같은 이름의 사용자가 이미 있습니다.",
+        "invalid_height": "키는 80~250cm 사이여야 합니다.",
+        "invalid_birth_date": "올바른 생년월일을 입력하세요.",
+        "birth_date_in_future": "생년월일은 미래일 수 없습니다.",
+        "birth_date_too_old": "생년월일이 너무 오래되었습니다.",
+        "invalid_sex": "남성 또는 여성을 선택하세요.",
+        "invalid_expected_weight": "예상 체중은 10~300kg 사이여야 합니다."
+      },
+      "abort": {
+        "reconfigure_successful": "사용자 정보가 수정되었습니다."
       }
     }
   }

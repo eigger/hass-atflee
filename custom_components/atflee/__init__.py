@@ -12,7 +12,7 @@ from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.NUMBER, Platform.SELECT, Platform.SWITCH]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SWITCH]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bool:
@@ -36,3 +36,4 @@ async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bo
 async def async_unload_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bool:
     """Unload an Atflee config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
