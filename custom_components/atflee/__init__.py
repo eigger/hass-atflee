@@ -57,11 +57,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bo
 
     entry.runtime_data = coordinator
 
-    # User devices point at the scale device through via_device, so make sure
+    # User devices point at the scale device by its registry id, so make sure
     # it exists before any platform adds entities.
-    dr.async_get(hass).async_get_or_create(
+    scale_device = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id, **scale_device_info(entry)
     )
+    coordinator.scale_device_id = scale_device.id
 
     # Entities are created per user subentry, so adding, removing or editing a
     # user needs a reload, as does any option except the body composition
