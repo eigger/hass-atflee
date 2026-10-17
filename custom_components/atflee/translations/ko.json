@@ -29,6 +29,7 @@
           "expected_weight_kg": "예상 체중(kg, 선택)"
         },
         "data_description": {
+          "birth_date": "연-월-일 순서로 입력하세요. 예: 1985-03-07 (1985.3.7, 19850307도 가능)",
           "expected_weight_kg": "처음 체중이 저장되기 전까지 체중으로 사용자를 구분하는 데 사용합니다."
         }
       }
@@ -42,7 +43,7 @@
       "name_required": "이름을 입력하세요.",
       "name_exists": "같은 이름의 사용자가 이미 있습니다.",
       "invalid_height": "키는 80~250cm 사이여야 합니다.",
-      "invalid_birth_date": "올바른 생년월일을 입력하세요.",
+      "invalid_birth_date": "올바른 생년월일을 입력하세요. 예: 1985-03-07",
       "birth_date_in_future": "생년월일은 미래일 수 없습니다.",
       "birth_date_too_old": "생년월일이 너무 오래되었습니다.",
       "invalid_sex": "남성 또는 여성을 선택하세요.",
@@ -199,6 +200,7 @@
             "expected_weight_kg": "예상 체중(kg, 선택)"
           },
           "data_description": {
+            "birth_date": "연-월-일 순서로 입력하세요. 예: 1985-03-07 (1985.3.7, 19850307도 가능)",
             "expected_weight_kg": "처음 체중이 저장되기 전까지 체중으로 사용자를 구분하는 데 사용합니다."
           }
         },
@@ -212,6 +214,7 @@
             "expected_weight_kg": "예상 체중(kg, 선택)"
           },
           "data_description": {
+            "birth_date": "연-월-일 순서로 입력하세요. 예: 1985-03-07 (1985.3.7, 19850307도 가능)",
             "expected_weight_kg": "처음 체중이 저장되기 전까지 체중으로 사용자를 구분하는 데 사용합니다."
           }
         }
@@ -220,7 +223,7 @@
         "name_required": "이름을 입력하세요.",
         "name_exists": "같은 이름의 사용자가 이미 있습니다.",
         "invalid_height": "키는 80~250cm 사이여야 합니다.",
-        "invalid_birth_date": "올바른 생년월일을 입력하세요.",
+        "invalid_birth_date": "올바른 생년월일을 입력하세요. 예: 1985-03-07",
         "birth_date_in_future": "생년월일은 미래일 수 없습니다.",
         "birth_date_too_old": "생년월일이 너무 오래되었습니다.",
         "invalid_sex": "남성 또는 여성을 선택하세요.",
