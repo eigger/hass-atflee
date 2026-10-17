@@ -77,6 +77,23 @@ Each person is a **User** subentry of the scale (Settings > Devices & Services >
 - **Active user** (select on the scale device): `auto` or one of the users. The choice is used when the scale connects and for the next weight, then falls back to `auto` after one finished measurement or after 10 minutes. It is not kept across restarts or reloads. Changing it while a measurement is already running does not move that measurement to another user.
 - **Default user** (integration options): the user assumed in `auto` mode. Leave it empty to use the first user (lowest slot).
 
+### Who is stepping on the scale (auto mode)
+
+With two or more users and the select on `auto`, the first weight of a measurement decides whose it is:
+
+1. Each user's reference weight is their last stable weight (stored by the integration, also across restarts) or, until there is one, the **Expected weight** from their profile. Users with neither are never matched.
+2. The user with the nearest reference weight is taken if the difference is within **Weight match tolerance** (integration options, default 3 kg) and that user is at least 1.5 kg closer than the runner-up. Otherwise the match is considered ambiguous.
+3. If nobody can be matched, the **default user** is assumed (`assignment: fallback`). But if the weight differs from the default user's reference weight by more than **Fallback max weight difference** (default 15 kg), the measurement is **not recorded for anyone** and the `atflee_unassigned_measurement` event is fired with `address`, `weight`, `timestamp`, `reason` (`no_candidates`, `out_of_tolerance` or `ambiguous`) and the `candidates` considered (`user_id`, `name`, `reference_weight_kg`, `difference_kg`). Use it for a notification or a manual assignment automation.
+4. A user picked on the select is always used (`assignment: selected`), and with only one user there is nothing to decide (`assignment: default`).
+
+The decision is made on the first *stable* weight, not on the unstable readings while the weight is still settling; until then, with several users in `auto`, those readings only update the scale diagnostics.
+
+Each stable weight becomes the user's reference weight for next time, except for a `fallback` measurement: that only sets a reference for a user who has none (neither a stored nor an expected weight), so a guest cannot shift the default user's reference.
+
+Every user sensor carries an `assignment` attribute: `matched`, `fallback`, `selected` or `default`.
+
+The body-composition profile is sent to the scale when it connects, before the weight is known, so it is the one of the selected or default user. If the weight then identifies somebody else, the scale's own body fat value is discarded and body fat, BMI and the other metrics are calculated by the integration for the identified user from the raw impedances.
+
 ## How It Works
 
 - The integration listens for Atflee scale advertisements and connects when a measurement is detected.
@@ -103,8 +120,8 @@ Each person is a **User** subentry of the scale (Settings > Devices & Services >
 
 ## Device Settings (Configuration)
 
-- Each person is a **user** of the scale. Use **Add user** on the integration entry to add one, or the user's **Reconfigure** action to change their name, height, birth date, sex or expected weight. These values are used to calculate the body composition metrics correctly.
-- **Configure** on the integration entry only holds the idle disconnect timeout and the body composition switch.
+- Each person is a **user** of the scale. Use **Add user** on the integration entry to add one, or the user's **Reconfigure** action to change their name, height, birth date, sex or expected weight (the expected weight lets the integration recognise a user by weight before a first measurement). These values are used to calculate the body composition metrics correctly.
+- **Configure** on the integration entry holds the idle disconnect timeout, the body composition switch, the default user and the weight identification thresholds (match tolerance, fallback max weight difference).
 
 ## Troubleshooting
 

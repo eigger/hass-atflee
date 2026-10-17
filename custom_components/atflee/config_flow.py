@@ -42,21 +42,29 @@ from .const import (
     CONF_DEFAULT_USER,
     CONF_ENABLE_BODY_COMP,
     CONF_EXPECTED_WEIGHT_KG,
+    CONF_FALLBACK_MAX_DELTA_KG,
     CONF_HEIGHT_CM,
+    CONF_MATCH_TOLERANCE_KG,
     CONF_NOTIFY_TIMEOUT_SECONDS,
     CONF_SEX,
     CONF_SLOT,
     CONF_USER_NAME,
     DEFAULT_ENABLE_BODY_COMP,
+    DEFAULT_FALLBACK_MAX_DELTA_KG,
     DEFAULT_HEIGHT_CM,
+    DEFAULT_MATCH_TOLERANCE_KG,
     DEFAULT_NOTIFY_TIMEOUT_SECONDS,
     DEFAULT_SEX,
     DOMAIN,
     GATT_PROFILES,
     MAX_EXPECTED_WEIGHT_KG,
+    MAX_FALLBACK_MAX_DELTA_KG,
     MAX_HEIGHT_CM,
+    MAX_MATCH_TOLERANCE_KG,
     MIN_EXPECTED_WEIGHT_KG,
+    MIN_FALLBACK_MAX_DELTA_KG,
     MIN_HEIGHT_CM,
+    MIN_MATCH_TOLERANCE_KG,
     SEXES,
     SUBENTRY_TYPE_USER,
 )
@@ -285,6 +293,30 @@ class AtfleeOptionsFlow(OptionsFlow):
 
         suggested_values = {**self._config_entry.data, **self._config_entry.options}
         schema = dict(BASE_SCHEMA)
+        schema[
+            vol.Required(CONF_MATCH_TOLERANCE_KG, default=DEFAULT_MATCH_TOLERANCE_KG)
+        ] = NumberSelector(
+            NumberSelectorConfig(
+                min=MIN_MATCH_TOLERANCE_KG,
+                max=MAX_MATCH_TOLERANCE_KG,
+                step=0.5,
+                mode=NumberSelectorMode.BOX,
+                unit_of_measurement="kg",
+            )
+        )
+        schema[
+            vol.Required(
+                CONF_FALLBACK_MAX_DELTA_KG, default=DEFAULT_FALLBACK_MAX_DELTA_KG
+            )
+        ] = NumberSelector(
+            NumberSelectorConfig(
+                min=MIN_FALLBACK_MAX_DELTA_KG,
+                max=MAX_FALLBACK_MAX_DELTA_KG,
+                step=1,
+                mode=NumberSelectorMode.BOX,
+                unit_of_measurement="kg",
+            )
+        )
         users = {
             sub.subentry_id: sub.data
             for sub in self._config_entry.subentries.values()

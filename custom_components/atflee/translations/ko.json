@@ -29,7 +29,7 @@
           "expected_weight_kg": "예상 체중(kg, 선택)"
         },
         "data_description": {
-          "expected_weight_kg": "나중에 체중으로 사용자를 구분할 때 사용합니다."
+          "expected_weight_kg": "처음 체중이 저장되기 전까지 체중으로 사용자를 구분하는 데 사용합니다."
         }
       }
     },
@@ -54,10 +54,14 @@
         "data": {
           "notify_timeout_seconds": "유휴 연결 해제 시간(초)",
           "enable_body_composition": "체성분 측정 활성화",
-          "default_user": "기본 사용자"
+          "default_user": "기본 사용자",
+          "match_tolerance_kg": "체중 일치 허용 오차(kg)",
+          "fallback_max_delta_kg": "기본 사용자 최대 체중 차이(kg)"
         },
         "data_description": {
-          "default_user": "선택된 사용자가 없을 때 사용합니다. 비워 두면 첫 번째 사용자입니다."
+          "default_user": "선택된 사용자가 없을 때 사용합니다. 비워 두면 첫 번째 사용자입니다.",
+          "match_tolerance_kg": "자동 모드에서 체중이 사용자의 마지막 체중과 이 값 이내일 때 해당 사용자로 인식합니다. 사용자가 두 명 이상일 때 적용됩니다.",
+          "fallback_max_delta_kg": "일치하는 사용자가 없고 체중이 기본 사용자의 마지막 체중과 이 값보다 많이 다르면 측정값을 기록하지 않고 atflee_unassigned_measurement 이벤트를 발생시킵니다."
         }
       }
     }
@@ -193,7 +197,7 @@
             "expected_weight_kg": "예상 체중(kg, 선택)"
           },
           "data_description": {
-            "expected_weight_kg": "나중에 체중으로 사용자를 구분할 때 사용합니다."
+            "expected_weight_kg": "처음 체중이 저장되기 전까지 체중으로 사용자를 구분하는 데 사용합니다."
           }
         },
         "reconfigure": {
@@ -206,7 +210,7 @@
             "expected_weight_kg": "예상 체중(kg, 선택)"
           },
           "data_description": {
-            "expected_weight_kg": "나중에 체중으로 사용자를 구분할 때 사용합니다."
+            "expected_weight_kg": "처음 체중이 저장되기 전까지 체중으로 사용자를 구분하는 데 사용합니다."
           }
         }
       },

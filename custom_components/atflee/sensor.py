@@ -496,6 +496,7 @@ def _packet_attributes(state: AtfleeState, m: AtfleeMeasurement | None) -> dict[
         "measure_state": m.measure_state if m else None,
         "stable": m.is_stable if m else None,
         "body_composition_complete": m.is_body_composition_complete if m else None,
+        "assignment": m.assignment if m else None,
         # 확장 체성분 속성
         "heart_rate": m.heart_rate if m else None,
         "support_upload_bodyfat": m.support_upload_bodyfat if m else None,
