@@ -55,6 +55,7 @@ from .atflee_ble.models import (
     AtfleeState,
     next_state,
 )
+from .registry_compat import find_device
 from .session_report import ARM, MEASURE, SessionTrace, build_session_report
 from .user_profile import (
     ActiveUserSelection,
@@ -156,6 +157,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         # scale_info: capabilities from the scale's device-info (A1) message.
         self.hardware_info: AtfleeHardwareInfo | None = None
         self.scale_info: AtfleeDeviceInfo | None = None
+        # Registry id of the scale device, set once setup has registered it.
+        self.scale_device_id: str | None = None
         self._hardware_info_done = False
         self._hardware_info_attempts = 0
         self._store: Store[dict[str, Any]] = Store(
@@ -247,7 +250,10 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         self._schedule_weights_save()
         self.async_update_listeners()
         registry = dr.async_get(self.hass)
-        device = registry.async_get_device(identifiers={(DOMAIN, self.address)})
+        if self.scale_device_id is not None:
+            device = registry.async_get(self.scale_device_id)
+        else:
+            device = find_device(registry, (DOMAIN, self.address), self.entry.entry_id)
         if device is not None:
             registry.async_update_device(device.id, **info.registry_fields())
 
