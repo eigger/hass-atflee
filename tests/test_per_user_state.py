@@ -87,7 +87,6 @@ def test_state_stores_measurement_under_user() -> None:
     m = AtfleeMeasurement(weight_kg=70.0, raw_hex="aa", battery_pct=90)
     state = _state(None, m, "u1")
     assert state.measurements == {"u1": m}
-    assert state.last_user_id == "u1"
     assert state.latest is m
     assert state.last_packet_hex == "aa"
     assert state.battery_pct == 90
@@ -98,7 +97,6 @@ def test_state_keeps_other_users_untouched() -> None:
     b = AtfleeMeasurement(weight_kg=80.0)
     state = _state(_state(None, a, "u1"), b, "u2")
     assert state.measurements == {"u1": a, "u2": b}
-    assert state.last_user_id == "u2"
     # Replacing one user does not alter the other, nor mutate the old state.
     prev = state
     c = AtfleeMeasurement(weight_kg=61.0)
@@ -114,7 +112,6 @@ def test_state_without_user_only_updates_scale_level() -> None:
     state = _state(first, m, None)
     assert set(state.measurements) == {"u1"}
     assert state.measurements["u1"].weight_kg == 70.0
-    assert state.last_user_id == "u1"
     assert state.latest is m
     assert state.battery_pct == 55
 

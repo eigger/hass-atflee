@@ -199,7 +199,6 @@ class AtfleeState:
     """
 
     measurements: dict[str, AtfleeMeasurement] = field(default_factory=dict)
-    last_user_id: str | None = None
     latest: AtfleeMeasurement | None = None
     battery_pct: int | None = None
     last_packet_hex: str | None = None
@@ -228,7 +227,6 @@ def next_state(
     (``user_id`` is None) only updates the scale-level fields.
     """
     measurements = dict(prev.measurements) if prev else {}
-    last_user_id = prev.last_user_id if prev else None
     latest = prev.latest if prev else None
     battery_pct = prev.battery_pct if prev else None
     last_packet_hex = prev.last_packet_hex if prev else None
@@ -239,10 +237,8 @@ def next_state(
             battery_pct = measurement.battery_pct
         if user_id is not None:
             measurements[user_id] = measurement
-            last_user_id = user_id
     return AtfleeState(
         measurements=measurements,
-        last_user_id=last_user_id,
         latest=latest,
         battery_pct=battery_pct,
         last_packet_hex=last_packet_hex,

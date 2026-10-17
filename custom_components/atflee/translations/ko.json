@@ -34,7 +34,9 @@
       }
     },
     "abort": {
-      "no_devices_found": "블루투스 장치를 찾지 못했습니다."
+      "no_devices_found": "블루투스 장치를 찾지 못했습니다.",
+      "already_configured": "이 체중계는 이미 설정되어 있습니다.",
+      "already_in_progress": "이 체중계의 설정이 이미 진행 중입니다."
     },
     "error": {
       "name_required": "이름을 입력하세요.",
@@ -60,8 +62,8 @@
         },
         "data_description": {
           "default_user": "선택된 사용자가 없을 때 사용합니다. 비워 두면 첫 번째 사용자입니다.",
-          "match_tolerance_kg": "자동 모드에서 체중이 사용자의 마지막 체중과 이 값 이내일 때 해당 사용자로 인식합니다. 사용자가 두 명 이상일 때 적용됩니다.",
-          "fallback_max_delta_kg": "일치하는 사용자가 없고 체중이 기본 사용자의 마지막 체중과 이 값보다 많이 다르면 측정값을 기록하지 않고 atflee_unassigned_measurement 이벤트를 발생시킵니다."
+          "match_tolerance_kg": "자동 모드에서 체중이 사용자의 마지막 안정 체중(없으면 예상 체중)과 이 값 이내일 때 해당 사용자로 인식합니다. 사용자가 두 명 이상일 때 적용됩니다.",
+          "fallback_max_delta_kg": "일치하는 사용자가 없고 체중이 기본 사용자의 마지막 안정 체중(없으면 예상 체중)과 이 값보다 많이 다르면 측정값을 기록하지 않고 atflee_unassigned_measurement 이벤트를 발생시킵니다."
         }
       }
     }

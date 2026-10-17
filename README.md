@@ -74,7 +74,7 @@ Device setup and discovery are done through the Home Assistant UI.
 
 Each person is a **User** subentry of the scale (Settings > Devices & Services > Atflee > Add user) with their own device and sensors.
 
-- **Active user** (select on the scale device): `auto` or one of the users. The choice is used when the scale connects and for the next weight, then falls back to `auto` after one finished measurement or after 10 minutes. It is not kept across restarts or reloads. Changing it while a measurement is already running does not move that measurement to another user.
+- **Active user** (select on the scale device): `auto` or one of the users. The choice is used when the scale connects and for the next weight, then falls back to `auto` after one finished measurement or after 10 minutes. It is not kept across restarts or reloads. Once the first stable weight of a measurement has been attributed, changing it does not move that measurement (a selection made before the first stable weight does apply).
 - **Default user** (integration options): the user assumed in `auto` mode. Leave it empty to use the first user (lowest slot).
 
 ### Who is stepping on the scale (auto mode)
@@ -90,7 +90,9 @@ The decision is made on the first *stable* weight, not on the unstable readings 
 
 Each stable weight becomes the user's reference weight for next time, except for a `fallback` measurement: that only sets a reference for a user who has none (neither a stored nor an expected weight), so a guest cannot shift the default user's reference.
 
-Every user sensor carries an `assignment` attribute: `matched`, `fallback`, `selected` or `default`.
+Every user sensor carries an `assignment` attribute: `matched`, `fallback`, `selected` or `default`. Before the stable weight, readings that go to a selected or single user carry `assignment: null`. User sensors only carry that user's own measurement attributes; the raw last packet and the connection details are on the scale's sensors.
+
+Deleting a user removes their device and entities, and their stored weight is dropped on the next reload of the integration.
 
 The body-composition profile is sent to the scale when it connects, before the weight is known, so it is the one of the selected or default user. If the weight then identifies somebody else, the scale's own body fat value is discarded and body fat, BMI and the other metrics are calculated by the integration for the identified user from the raw impedances.
 
@@ -98,35 +100,32 @@ The body-composition profile is sent to the scale when it connects, before the w
 
 - The integration listens for Atflee scale advertisements and connects when a measurement is detected.
 - It provides real-time updates for weight and body composition.
-- HA creates automatically updated sensor entities for:
-  - **Weight (kg)**
-  - **BMI**
-  - **Body Fat (%)**
-  - **Muscle Mass (kg) / Muscle (%)**
-  - **Visceral Fat**
-  - **Subcutaneous Fat (%)**
-  - **BMR (kcal)**
-  - **Bone Mass (kg)**
-  - **Body Water (%)**
-  - **Protein (%)**
-  - **Skeletal Muscle (%)**
-  - **Body Fat Mass / Fat-Free Mass / Body Water Mass / Protein Mass / Skeletal Muscle Mass (kg)** (calculated from weight and the body fat / body water / protein / skeletal muscle %)
-  - **Body Age (years)**
-  - **Body Score**
-  - **Heart Rate (bpm)** (if supported by model)
-  - **Battery (%)**
-  - **RSSI / Signal Strength (diagnostic)**
-  - **Connection Duration (diagnostic)**
+- Home Assistant creates these entities, each person on their own device.
+
+**Per user (one device per user)**
+
+- **Weight (kg)** and **Impedance (ohm)** always exist.
+- Everything else is created the first time that user gets a value, so values the scale never delivers do not show up as permanently unknown entities: **BMI**, **Body Fat (%)**, **Muscle Mass (kg) / Muscle (%)**, **Visceral Fat**, **Subcutaneous Fat (%)**, **BMR (kcal)**, **Bone Mass (kg)**, **Body Water (%)**, **Protein (%)**, **Skeletal Muscle (%)**, **Body Age (years)**, **Body Score**, **Heart Rate (bpm)** (if supported by the model) and the derived masses **Body Fat Mass / Fat-Free Mass / Body Water Mass / Protein Mass / Skeletal Muscle Mass (kg)** (calculated from weight and the body fat / body water / protein / skeletal muscle %).
+
+**Scale device**
+
+- **Battery (%)**
+- Diagnostic: **Connection** (binary sensor), **Connection Duration**, **Verify Status**, **Measure Status**, **Scale Status**, **Failure Count**, **Last Failure**
+- **Active user** (select) and **Body composition measurement** (switch)
 
 ## Device Settings (Configuration)
 
 - Each person is a **user** of the scale. Use **Add user** on the integration entry to add one, or the user's **Reconfigure** action to change their name, height, birth date, sex or expected weight (the expected weight lets the integration recognise a user by weight before a first measurement). These values are used to calculate the body composition metrics correctly.
 - **Configure** on the integration entry holds the idle disconnect timeout, the body composition switch, the default user and the weight identification thresholds (match tolerance, fallback max weight difference).
 
+## Upgrading from 0.3.2 or earlier (no migration)
+
+There is no migration. The old entry has no user, and until you add one with **Add user** no weight is recorded at all (with no user, measurements only reach the scale's latest-packet diagnostics, not any weight entity). Height, birth year and sex are not carried over, so enter them again in the new user. The old measurement entities (unique ids `{address}_weight`, `{address}_body_fat`, ...) are no longer provided and should be deleted by hand. Battery and diagnostic entities keep their ids.
+
 ## Troubleshooting
 
 - **Connection timed out**: Ensure you are standing on the scale while configuring or syncing. The scale turns off its Bluetooth radio quickly when not in use.
-- **Missing body composition data**: BMI and body composition need at least one user with the correct height, birth date and sex. Entries created before users were introduced have no user: add one by hand (there is no migration). Some models require these to be sent to the device to trigger the body fat measurement.
+- **Missing body composition data**: BMI and body composition need at least one user with the correct height, birth date and sex. Some models require these to be sent to the device to trigger the body fat measurement.
 - **`Connection terminated by peer`**: BLE interference or weak signal. Try moving the device closer to your Home Assistant Bluetooth adapter or use an ESPHome Bluetooth proxy.
 
 
