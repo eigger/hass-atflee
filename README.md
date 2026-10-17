@@ -65,7 +65,7 @@ Device setup and discovery are done through the Home Assistant UI.
    - Home Assistant should automatically discover the "Atflee" device via Bluetooth. Click **Configure**.
    - If it wasn't auto-discovered, click **Add Integration** and search for "Atflee".
 3. **Configure User Details**:
-   - The integration will ask for your **Height**, **Birth Year**, and **Sex**. 
+   - Setup ends with a first-user step: **Name**, **Height**, **Birth Date**, **Sex** and an optional **Expected weight**.
    - This information is required for the scale to calculate body composition metrics (Fat, Muscle, etc.) locally or via its algorithm.
 4. **Finalize**:
    - Once configured, stay on the scale until the measurement is complete and synced to HA.
@@ -96,12 +96,13 @@ Device setup and discovery are done through the Home Assistant UI.
 
 ## Device Settings (Configuration)
 
-- You can update your **Height**, **Birth Year**, and **Sex** at any time by clicking **Configure** on the integration entry. These values are used to calculate the body composition metrics correctly.
+- Each person is a **user** of the scale. Use **Add user** on the integration entry to add one, or the user's **Reconfigure** action to change their name, height, birth date, sex or expected weight. These values are used to calculate the body composition metrics correctly.
+- **Configure** on the integration entry only holds the idle disconnect timeout and the body composition switch.
 
 ## Troubleshooting
 
 - **Connection timed out**: Ensure you are standing on the scale while configuring or syncing. The scale turns off its Bluetooth radio quickly when not in use.
-- **Missing body composition data**: Ensure you have entered your height/birth year/sex correctly in the configuration. Some models require these to be sent to the device to trigger the body fat measurement.
+- **Missing body composition data**: BMI and body composition need at least one user with the correct height, birth date and sex. Entries created before users were introduced have no user: add one by hand (there is no migration). Some models require these to be sent to the device to trigger the body fat measurement.
 - **`Connection terminated by peer`**: BLE interference or weak signal. Try moving the device closer to your Home Assistant Bluetooth adapter or use an ESPHome Bluetooth proxy.
 
 
