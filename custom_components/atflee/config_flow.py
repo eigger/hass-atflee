@@ -16,37 +16,53 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
+    ConfigSubentryData,
+    ConfigSubentryFlow,
     OptionsFlowWithReload,
+    SubentryFlowResult,
 )
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    DateSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
 )
+from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_BIRTH_YEAR,
+    CONF_BIRTH_DATE,
     CONF_ENABLE_BODY_COMP,
+    CONF_EXPECTED_WEIGHT_KG,
     CONF_HEIGHT_CM,
     CONF_NOTIFY_TIMEOUT_SECONDS,
     CONF_SEX,
-    DEFAULT_BIRTH_YEAR,
+    CONF_SLOT,
+    CONF_USER_NAME,
     DEFAULT_ENABLE_BODY_COMP,
     DEFAULT_HEIGHT_CM,
     DEFAULT_NOTIFY_TIMEOUT_SECONDS,
     DEFAULT_SEX,
     DOMAIN,
     GATT_PROFILES,
-    MAX_BIRTH_YEAR,
+    MAX_EXPECTED_WEIGHT_KG,
     MAX_HEIGHT_CM,
-    MIN_BIRTH_YEAR,
+    MIN_EXPECTED_WEIGHT_KG,
     MIN_HEIGHT_CM,
+    SEXES,
+    SUBENTRY_TYPE_USER,
+)
+from .user_profile import (
+    DEFAULT_USER_NAME,
+    lowest_free_slot,
+    normalize_user_input,
+    validate_user_input,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,31 +77,6 @@ class Discovery:
 
 
 BASE_SCHEMA = {
-    vol.Required(CONF_HEIGHT_CM, default=DEFAULT_HEIGHT_CM): NumberSelector(
-        NumberSelectorConfig(
-            min=MIN_HEIGHT_CM,
-            max=MAX_HEIGHT_CM,
-            step=1,
-            mode=NumberSelectorMode.BOX,
-            unit_of_measurement="cm",
-        )
-    ),
-    vol.Required(CONF_BIRTH_YEAR, default=DEFAULT_BIRTH_YEAR): NumberSelector(
-        NumberSelectorConfig(
-            min=MIN_BIRTH_YEAR,
-            max=MAX_BIRTH_YEAR,
-            step=1,
-            mode=NumberSelectorMode.BOX,
-            unit_of_measurement="year",
-        )
-    ),
-    vol.Required(CONF_SEX, default=DEFAULT_SEX): SelectSelector(
-        SelectSelectorConfig(
-            options=["male", "female"],
-            mode=SelectSelectorMode.DROPDOWN,
-            translation_key="sex",
-        )
-    ),
     vol.Required(
         CONF_NOTIFY_TIMEOUT_SECONDS, default=DEFAULT_NOTIFY_TIMEOUT_SECONDS
     ): NumberSelector(
@@ -103,13 +94,79 @@ BASE_SCHEMA = {
 }
 
 
+def _user_schema() -> vol.Schema:
+    """Form schema for one user profile."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_USER_NAME, default=DEFAULT_USER_NAME): TextSelector(),
+            vol.Required(CONF_HEIGHT_CM, default=DEFAULT_HEIGHT_CM): NumberSelector(
+                NumberSelectorConfig(
+                    min=MIN_HEIGHT_CM,
+                    max=MAX_HEIGHT_CM,
+                    step=1,
+                    mode=NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
+            vol.Required(CONF_BIRTH_DATE): DateSelector(),
+            vol.Required(CONF_SEX, default=DEFAULT_SEX): SelectSelector(
+                SelectSelectorConfig(
+                    options=list(SEXES),
+                    mode=SelectSelectorMode.DROPDOWN,
+                    translation_key="sex",
+                )
+            ),
+            vol.Optional(CONF_EXPECTED_WEIGHT_KG): NumberSelector(
+                NumberSelectorConfig(
+                    min=MIN_EXPECTED_WEIGHT_KG,
+                    max=MAX_EXPECTED_WEIGHT_KG,
+                    step=0.1,
+                    mode=NumberSelectorMode.BOX,
+                    unit_of_measurement="kg",
+                )
+            ),
+        }
+    )
+
+
 class AtfleeConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle config flow for Atflee."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         self._discovered_devices: dict[str, Discovery] = {}
+        self._title: str = ""
+        self._entry_data: dict[str, Any] = {}
+
+    async def async_step_first_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Collect the first user's profile; it becomes the first subentry."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = validate_user_input(user_input, dt_util.now().date())
+            if not errors:
+                return self.async_create_entry(
+                    title=self._title,
+                    data=self._entry_data,
+                    subentries=[
+                        ConfigSubentryData(
+                            data=normalize_user_input(user_input, slot=1),
+                            subentry_type=SUBENTRY_TYPE_USER,
+                            title=str(user_input[CONF_USER_NAME]).strip(),
+                            unique_id=None,
+                        )
+                    ],
+                )
+
+        return self.async_show_form(
+            step_id="first_user",
+            data_schema=self.add_suggested_values_to_schema(
+                _user_schema(), user_input
+            ),
+            errors=errors,
+        )
 
     def _is_atflee_candidate(self, discovery_info: BluetoothServiceInfoBleak) -> bool:
         """Check whether discovered device matches Atflee heuristics."""
@@ -147,10 +204,9 @@ class AtfleeConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             address = self.unique_id
             assert address is not None
-            return self.async_create_entry(
-                title=self.context["title_placeholders"]["name"],
-                data={CONF_ADDRESS: address} | user_input,
-            )
+            self._title = self.context["title_placeholders"]["name"]
+            self._entry_data = {CONF_ADDRESS: address} | user_input
+            return await self.async_step_first_user()
 
         return self.async_show_form(
             step_id="bluetooth_confirm",
@@ -167,10 +223,9 @@ class AtfleeConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(address, raise_on_progress=False)
             self._abort_if_unique_id_configured()
             selected = self._discovered_devices[address]
-            return self.async_create_entry(
-                title=selected.name,
-                data=user_input,
-            )
+            self._title = selected.name
+            self._entry_data = dict(user_input)
+            return await self.async_step_first_user()
 
         current_ids = self._async_current_ids()
         for service_info in async_discovered_service_info(self.hass):
@@ -203,6 +258,14 @@ class AtfleeConfigFlow(ConfigFlow, domain=DOMAIN):
         """Return the options flow."""
         return AtfleeOptionsFlow(config_entry)
 
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return the subentry types (one per scale user)."""
+        return {SUBENTRY_TYPE_USER: UserSubentryFlow}
+
 
 class AtfleeOptionsFlow(OptionsFlowWithReload):
     """Atflee options flow."""
@@ -223,4 +286,72 @@ class AtfleeOptionsFlow(OptionsFlowWithReload):
             data_schema=self.add_suggested_values_to_schema(
                 vol.Schema(BASE_SCHEMA), suggested_values
             ),
+        )
+
+
+class UserSubentryFlow(ConfigSubentryFlow):
+    """Add or reconfigure one user of the scale."""
+
+    def _existing_names(self, exclude_id: str | None = None) -> list[str]:
+        return [
+            str(sub.data.get(CONF_USER_NAME, sub.title))
+            for sub in self._get_entry().subentries.values()
+            if sub.subentry_type == SUBENTRY_TYPE_USER and sub.subentry_id != exclude_id
+        ]
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add a user, taking the lowest free slot."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = validate_user_input(
+                user_input, dt_util.now().date(), self._existing_names()
+            )
+            if not errors:
+                used = [
+                    int(sub.data.get(CONF_SLOT, 0))
+                    for sub in self._get_entry().subentries.values()
+                    if sub.subentry_type == SUBENTRY_TYPE_USER
+                ]
+                data = normalize_user_input(user_input, lowest_free_slot(used))
+                return self.async_create_entry(title=data[CONF_USER_NAME], data=data)
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(
+                _user_schema(), user_input
+            ),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Edit a user; the slot never changes."""
+        subentry = self._get_reconfigure_subentry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            errors = validate_user_input(
+                user_input,
+                dt_util.now().date(),
+                self._existing_names(subentry.subentry_id),
+            )
+            if not errors:
+                data = normalize_user_input(
+                    user_input, int(subentry.data.get(CONF_SLOT, 1))
+                )
+                return self.async_update_and_abort(
+                    self._get_entry(),
+                    subentry,
+                    title=data[CONF_USER_NAME],
+                    data=data,
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                _user_schema(), user_input or dict(subentry.data)
+            ),
+            errors=errors,
         )

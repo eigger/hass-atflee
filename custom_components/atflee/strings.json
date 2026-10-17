@@ -6,9 +6,6 @@
         "description": "Select a discovered scale. Connection starts when advertisement is received.",
         "data": {
           "address": "Bluetooth address",
-          "height_cm": "User height (cm)",
-          "birth_year": "Birth year",
-          "sex": "Sex (male/female)",
           "notify_timeout_seconds": "Idle disconnect timeout (seconds)",
           "enable_body_composition": "Enable body composition measurement"
         }
@@ -17,16 +14,37 @@
         "title": "Atflee scale found",
         "description": "Configure measurement session options for {name}.",
         "data": {
-          "height_cm": "User height (cm)",
-          "birth_year": "Birth year",
-          "sex": "Sex (male/female)",
           "notify_timeout_seconds": "Idle disconnect timeout (seconds)",
           "enable_body_composition": "Enable body composition measurement"
+        }
+      },
+      "first_user": {
+        "title": "First user",
+        "description": "Enter the profile of the person using this scale. More users can be added later from the integration page.",
+        "data": {
+          "name": "Name",
+          "height_cm": "Height (cm)",
+          "birth_date": "Birth date",
+          "sex": "Sex",
+          "expected_weight_kg": "Expected weight (kg, optional)"
+        },
+        "data_description": {
+          "expected_weight_kg": "Used later to tell users apart by weight."
         }
       }
     },
     "abort": {
       "no_devices_found": "No Bluetooth devices found."
+    },
+    "error": {
+      "name_required": "Enter a name.",
+      "name_exists": "A user with this name already exists.",
+      "invalid_height": "Height must be between 80 and 250 cm.",
+      "invalid_birth_date": "Enter a valid birth date.",
+      "birth_date_in_future": "Birth date cannot be in the future.",
+      "birth_date_too_old": "Birth date is too far in the past.",
+      "invalid_sex": "Select male or female.",
+      "invalid_expected_weight": "Expected weight must be between 10 and 300 kg."
     }
   },
   "options": {
@@ -34,9 +52,6 @@
       "init": {
         "title": "Atflee options",
         "data": {
-          "height_cm": "User height (cm)",
-          "birth_year": "Birth year",
-          "sex": "Sex (male/female)",
           "notify_timeout_seconds": "Idle disconnect timeout (seconds)",
           "enable_body_composition": "Enable body composition measurement"
         }
@@ -85,21 +100,57 @@
     "binary_sensor": {
       "ble_connection": { "name": "Connection" }
     },
-    "number": {
-      "height_cm": { "name": "User height" },
-      "birth_year": { "name": "User birth year" }
-    },
-    "select": {
-      "sex": {
-        "name": "User sex",
-        "state": {
-          "male": "Male",
-          "female": "Female"
-        }
-      }
-    },
     "switch": {
       "enable_body_comp": { "name": "Body composition measurement" }
+    }
+  },
+  "config_subentries": {
+    "user": {
+      "entry_type": "User",
+      "initiate_flow": {
+        "user": "Add user"
+      },
+      "step": {
+        "user": {
+          "title": "Add user",
+          "data": {
+            "name": "Name",
+            "height_cm": "Height (cm)",
+            "birth_date": "Birth date",
+            "sex": "Sex",
+            "expected_weight_kg": "Expected weight (kg, optional)"
+          },
+          "data_description": {
+            "expected_weight_kg": "Used later to tell users apart by weight."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure user",
+          "data": {
+            "name": "Name",
+            "height_cm": "Height (cm)",
+            "birth_date": "Birth date",
+            "sex": "Sex",
+            "expected_weight_kg": "Expected weight (kg, optional)"
+          },
+          "data_description": {
+            "expected_weight_kg": "Used later to tell users apart by weight."
+          }
+        }
+      },
+      "error": {
+        "name_required": "Enter a name.",
+        "name_exists": "A user with this name already exists.",
+        "invalid_height": "Height must be between 80 and 250 cm.",
+        "invalid_birth_date": "Enter a valid birth date.",
+        "birth_date_in_future": "Birth date cannot be in the future.",
+        "birth_date_too_old": "Birth date is too far in the past.",
+        "invalid_sex": "Select male or female.",
+        "invalid_expected_weight": "Expected weight must be between 10 and 300 kg."
+      },
+      "abort": {
+        "reconfigure_successful": "User updated."
+      }
     }
   }
 }

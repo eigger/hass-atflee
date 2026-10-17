@@ -61,8 +61,8 @@ def scale_cause(
     if where == ARM:
         return (
             "Connected, but preparing the measurement (start command or "
-            "user-info packet) raised an error: check the configured height, "
-            "birth year and sex, or open an issue with the error text."
+            "user-info packet) raised an error: check the configured user's height, "
+            "birth date and sex, or open an issue with the error text."
         )
     if where == MEASURE:
         return (

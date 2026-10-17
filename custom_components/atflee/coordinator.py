@@ -18,15 +18,16 @@ from homeassistant.util import dt as dt_util
 
 from .atflee_ble.bodycomp import IMPEDANCE_CHANNELS, calculate_body_composition
 from .atflee_ble.connection import AtfleeBleClient
+from .atflee_ble.profile import age_from_birth_date
 from .const import (
-    CONF_HEIGHT_CM,
     CONF_NOTIFY_TIMEOUT_SECONDS,
-    DEFAULT_HEIGHT_CM,
     DOMAIN,
     GATT_PROFILES,
+    SUBENTRY_TYPE_USER,
 )
 from .atflee_ble.models import AtfleeMeasurement, AtfleeState
 from .session_report import ARM, MEASURE, SessionTrace, build_session_report
+from .user_profile import default_profile, primary_user_data, profile_from_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -247,34 +248,16 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         )
         self._session_task = self.hass.async_create_task(self._run_measurement_session())
 
-    def _current_height_cm(self) -> int:
-        return int(
-            self.entry.options.get(
-                CONF_HEIGHT_CM,
-                self.entry.data.get(CONF_HEIGHT_CM, DEFAULT_HEIGHT_CM),
-            )
+    def _primary_profile(self) -> tuple[int, int, str]:
+        """Return (height_cm, age, sex) of the first user (lowest slot)."""
+        primary = primary_user_data(
+            sub.data
+            for sub in self.entry.subentries.values()
+            if sub.subentry_type == SUBENTRY_TYPE_USER
         )
-
-    def _user_profile(self) -> tuple[int, int, str]:
-        """Return (height_cm, age, sex) from the entry configuration."""
-        from .const import (
-            CONF_BIRTH_YEAR,
-            CONF_SEX,
-            DEFAULT_BIRTH_YEAR,
-            DEFAULT_SEX,
-        )
-
-        birth_year = int(
-            self.entry.options.get(
-                CONF_BIRTH_YEAR,
-                self.entry.data.get(CONF_BIRTH_YEAR, DEFAULT_BIRTH_YEAR),
-            )
-        )
-        sex = str(
-            self.entry.options.get(CONF_SEX, self.entry.data.get(CONF_SEX, DEFAULT_SEX))
-        )
-        age = max(1, dt_util.now().year - birth_year)
-        return self._current_height_cm(), age, sex
+        profile = profile_from_data(primary) if primary else default_profile()
+        age = max(1, age_from_birth_date(profile.birth_date, dt_util.now().date()))
+        return profile.height_cm, age, profile.sex
 
     def _apply_body_composition(self, measurement: AtfleeMeasurement) -> None:
         """Fill the composition fields from a full impedance set, if present."""
@@ -284,7 +267,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             or len(measurement.impedances_ohm) < IMPEDANCE_CHANNELS
         ):
             return
-        height_cm, age, sex = self._user_profile()
+        height_cm, age, sex = self._primary_profile()
         result = calculate_body_composition(
             measurement.weight_kg,
             height_cm,
@@ -352,7 +335,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         return AtfleeState(
             measurement=measurement if measurement is not None else (prev.measurement if prev else None),
             last_packet_hex=measurement.raw_hex if measurement is not None else (prev.last_packet_hex if prev else None),
-            user_height_cm=self._current_height_cm(),
+            user_height_cm=self._primary_profile()[0],
             connected=connected,
             measuring=measuring,
             connection_started_at=connection_started_at,
@@ -490,7 +473,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
 
                 if send_enabled:
                     now_local = dt_util.now()
-                    height_cm, age, sex = self._user_profile()
+                    height_cm, age, sex = self._primary_profile()
                     # Standard (non-DST) offset, like the scale's own clock setup.
                     utc_offset = (now_local.utcoffset() or timedelta(0)) - (
                         now_local.dst() or timedelta(0)
@@ -590,7 +573,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
 
                     measurement = self._merge_with_previous_measurement(measurement)
 
-                    height_cm = self._current_height_cm()
+                    height_cm = self._primary_profile()[0]
                     if measurement.bmi is None and measurement.weight_kg is not None and height_cm > 0:
                         height_m = height_cm / 100.0
                         measurement.bmi = round(measurement.weight_kg / (height_m * height_m), 2)
