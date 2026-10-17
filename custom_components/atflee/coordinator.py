@@ -488,20 +488,25 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             self._selection.clear()
             self._notify_active_user()
 
-    def _profile(self, user_id: str | None) -> tuple[int, int, str] | None:
-        """Return (height_cm, age, sex) of a user, or None if unavailable."""
+    def body_profile(self, user_id: str | None) -> tuple[int, int, str] | None:
+        """Return (height_cm, age, sex) of a user, or None; never logs."""
         sub = self.entry.subentries.get(user_id) if user_id else None
         profile = profile_from_data(sub.data) if sub else None
         if profile is None:
-            if user_id not in self._warned_no_profile:
-                self._warned_no_profile.add(user_id)
-                _LOGGER.warning(
-                    "Atflee: no usable user profile is configured; body metrics are "
-                    "skipped. Add a user from the integration page"
-                )
             return None
         age = max(1, age_from_birth_date(profile.birth_date, dt_util.now().date()))
         return profile.height_cm, age, profile.sex
+
+    def _profile(self, user_id: str | None) -> tuple[int, int, str] | None:
+        """Like body_profile, but warns once per user when it is unusable."""
+        profile = self.body_profile(user_id)
+        if profile is None and user_id not in self._warned_no_profile:
+            self._warned_no_profile.add(user_id)
+            _LOGGER.warning(
+                "Atflee: no usable user profile is configured; body metrics are "
+                "skipped. Add a user from the integration page"
+            )
+        return profile
 
     def _apply_body_composition(
         self, measurement: AtfleeMeasurement, user_id: str | None
