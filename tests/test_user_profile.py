@@ -53,7 +53,7 @@ def test_birth_date_accepts_common_text_formats() -> None:
     expected = date(1985, 3, 7)
     for text in ("1985-03-07", "1985-3-7", "1985.3.7", "1985/03/07", "19850307", " 1985-03-07 "):
         assert up.parse_birth_date(text) == expected
-    for text in ("1985-02-30", "85-03-07", "", "1985-13-01", "abc"):
+    for text in ("1985-02-30", "85-03-07", "", "1985-13-01", "abc", "1985111", "198537", "1985-3/7", "1985-0307", "1985-03"):
         assert up.parse_birth_date(text) is None
 
 

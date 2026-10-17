@@ -41,7 +41,9 @@ from .const import (
 DEFAULT_USER_NAME = "User 1"
 
 
-_BIRTH_DATE_RE = re.compile(r"^(\d{4})[-./]?(\d{1,2})[-./]?(\d{1,2})$")
+# Either ``YYYYMMDD`` or ``YYYY<sep>M<sep>D`` with the same separator twice;
+# other digit counts are ambiguous and rejected.
+_BIRTH_DATE_RE = re.compile(r"^(\d{4})(?:([-./])(\d{1,2})\2(\d{1,2})|(\d{2})(\d{2}))$")
 
 
 def parse_birth_date(value: Any) -> date | None:
@@ -53,8 +55,9 @@ def parse_birth_date(value: Any) -> date | None:
     match = _BIRTH_DATE_RE.match(value.strip())
     if match is None:
         return None
+    year, _, month, day, month8, day8 = match.groups()
     try:
-        return date(*(int(part) for part in match.groups()))
+        return date(int(year), int(month or month8), int(day or day8))
     except ValueError:
         return None
 
