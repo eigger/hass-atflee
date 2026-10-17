@@ -10,7 +10,9 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 
 from .coordinator import AtfleeConfigEntry, AtfleeDataUpdateCoordinator
+from .const import CONF_ENABLE_BODY_COMP
 from .entity import scale_device_info
+from .user_profile import reload_needed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,15 +39,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bo
     )
 
     # Entities are created per user subentry, so adding, removing or editing a
-    # user needs a reload. Other entry updates (e.g. the body composition
-    # switch rewriting the options) must not reload.
+    # user needs a reload, as does any option except the body composition
+    # switch, which the coordinator reads live.
     users = _users_snapshot(coordinator)
+    options = dict(entry.options)
 
-    async def _async_users_changed(hass: HomeAssistant, entry: AtfleeConfigEntry) -> None:
-        if _users_snapshot(entry.runtime_data) != users:
+    async def _async_entry_updated(hass: HomeAssistant, entry: AtfleeConfigEntry) -> None:
+        if reload_needed(
+            users,
+            _users_snapshot(entry.runtime_data),
+            options,
+            entry.options,
+            (CONF_ENABLE_BODY_COMP,),
+        ):
             await hass.config_entries.async_reload(entry.entry_id)
 
-    entry.async_on_unload(entry.add_update_listener(_async_users_changed))
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _LOGGER.debug("Atflee entry setup complete: %s", entry.entry_id)

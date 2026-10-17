@@ -138,11 +138,6 @@ def _slot(item: Mapping[str, Any]) -> int:
         return 0
 
 
-def primary_user_data(users: Iterable[Mapping[str, Any]]) -> Mapping[str, Any] | None:
-    """Return the data of the user in the lowest slot, or None without users."""
-    return min(users, key=_slot, default=None)
-
-
 def primary_user_id(users: Mapping[str, Mapping[str, Any]]) -> str | None:
     """Return the subentry id of the user in the lowest slot, or None without users."""
     return min(users, key=lambda sid: (_slot(users[sid]), sid), default=None)
@@ -156,3 +151,22 @@ def user_unique_id(address: str, subentry_id: str, key: str) -> str:
 def user_device_identifier(address: str, subentry_id: str) -> str:
     """Device identifier value of a user device (the domain is added by the caller)."""
     return f"{address}_{subentry_id}"
+
+
+def reload_needed(
+    old_users: Mapping[str, Any],
+    new_users: Mapping[str, Any],
+    old_options: Mapping[str, Any],
+    new_options: Mapping[str, Any],
+    live_option_keys: Iterable[str] = (),
+) -> bool:
+    """Decide whether an entry update requires a reload.
+
+    Users changing always does. Options do too, except the ``live_option_keys``
+    that the coordinator reads at use time.
+    """
+    if old_users != new_users:
+        return True
+    live = set(live_option_keys)
+    strip = lambda o: {k: v for k, v in o.items() if k not in live}  # noqa: E731
+    return strip(old_options) != strip(new_options)
