@@ -2,7 +2,7 @@
 
 [한국어](troubleshooting.ko.md) · [Home](../README.md)
 
-Start with [shared proxy setup, recommended boards and connection checks (한국어)](https://github.com/eigger/hass-repo-standards/blob/main/docs/bluetooth.md). This includes XIAO W5500 V1.2 (Ethernet/PoE/external antenna) and the USB-A dongle-form M5Stack AtomS3U, purchase links and board-specific limitations. These recommendations do not claim new Atflee hardware validation.
+Start with [Bluetooth proxy setup](https://github.com/eigger/hass-repo-standards/blob/main/docs/bluetooth.md). This includes XIAO W5500 V1.2 (Ethernet/PoE/external antenna) and the USB-A dongle-form M5Stack AtomS3U, purchase links and board-specific limitations. These recommendations do not claim new Atflee hardware validation.
 
 ## Find the failing stage
 

@@ -2,7 +2,7 @@
 
 [English](troubleshooting.md) · [시작 페이지](../README.ko.md)
 
-[공통 proxy 설정·추천 기기·연결 확인 순서](https://github.com/eigger/hass-repo-standards/blob/main/docs/bluetooth.md)를 먼저 확인하세요. XIAO W5500 V1.2(유선/PoE/외장 안테나)와 USB-A 동글 형태 M5Stack AtomS3U의 구매 링크·보드별 제약은 공통 문서에서 관리합니다. 이 추천은 새로운 Atflee 실물 검증을 의미하지 않습니다.
+[Bluetooth 프록시 설정](https://github.com/eigger/hass-repo-standards/blob/main/docs/bluetooth.ko.md)을 먼저 확인하세요. XIAO W5500 V1.2(유선/PoE/외장 안테나)와 USB-A 동글 형태 M5Stack AtomS3U의 구매 링크·보드별 제약은 공통 문서에서 관리합니다. 이 추천은 새로운 Atflee 실물 검증을 의미하지 않습니다.
 
 ## 실패 단계부터 확인
 

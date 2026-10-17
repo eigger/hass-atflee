@@ -37,7 +37,7 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HA
 
 - 소비자용 체성분·평가 값은 추정치이며 **의료 조언이 아닙니다**. 일부 계산식의 척도는 다른 기기와 비교 검증되지 않았습니다.
 - **0.3.2 이하에서 업그레이드**했다면 사용자를 추가해야 체중을 기록합니다. 이전 프로필은 자동 이관되지 않습니다. [업그레이드 절차](docs/usage.ko.md#032-이하에서-업그레이드).
-- 광고 발견과 GATT 연결 성공은 다릅니다. 공식 앱 연결을 해제하고 필요하면 휴대폰의 페어링을 지우세요. 정상 동작하는 로컬 어댑터를 사용할 수 있으며 가까운 proxy로 배치를 개선할 수 있습니다. [공통 proxy 설정·추천 기기](https://github.com/eigger/hass-repo-standards/blob/main/docs/bluetooth.md) · [문제 해결](docs/troubleshooting.ko.md).
+- 광고 발견과 GATT 연결 성공은 다릅니다. 공식 앱 연결을 해제하고 필요하면 휴대폰의 페어링을 지우세요. 정상 동작하는 로컬 어댑터를 사용할 수 있으며 가까운 proxy로 배치를 개선할 수 있습니다. [Bluetooth 프록시 설정](https://github.com/eigger/hass-repo-standards/blob/main/docs/bluetooth.ko.md) · [문제 해결](docs/troubleshooting.ko.md).
 - 이번 공통화에서 새로운 실물 기기·펌웨어·proxy 보드를 검증하지 않았습니다.
 
 ## 문서

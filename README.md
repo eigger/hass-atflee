@@ -37,7 +37,7 @@ For example, add a second user through **Add user**, then select that user with 
 
 - Consumer body-composition and evaluation values are estimates, **not medical advice**; some formula scales have not been verified against other devices.
 - For installs upgraded from **0.3.2 or earlier**, add a user before any weight can be recorded; old profiles are not migrated. [Upgrade steps](docs/usage.md#upgrading-from-032-or-earlier-no-migration).
-- Bluetooth discovery does not guarantee a GATT connection. Close the official app; if necessary, forget the phone's pairing. A working local adapter is supported; a nearby Bluetooth proxy can improve placement. [Shared proxy setup and recommended devices (한국어)](https://github.com/eigger/hass-repo-standards/blob/main/docs/bluetooth.md) · [Troubleshooting](docs/troubleshooting.md).
+- Bluetooth discovery does not guarantee a GATT connection. Close the official app; if necessary, forget the phone's pairing. A working local adapter is supported; a nearby Bluetooth proxy can improve placement. [Bluetooth proxy setup](https://github.com/eigger/hass-repo-standards/blob/main/docs/bluetooth.md) · [Troubleshooting](docs/troubleshooting.md).
 - No new physical-device, firmware or proxy-board validation was performed during standards adoption.
 
 ## Documentation
