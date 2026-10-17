@@ -1,4 +1,4 @@
-"""Tests for the user subentry validation and v1 -> v2 migration helpers (no Home Assistant)."""
+"""Tests for the user subentry validation helpers (no Home Assistant)."""
 
 from __future__ import annotations
 
@@ -90,70 +90,17 @@ def test_primary_user_is_lowest_slot() -> None:
     assert up.primary_user_data([]) is None
 
 
-def test_profile_from_data_defaults() -> None:
-    profile = up.profile_from_data({})
-    assert (profile.height_cm, profile.birth_date, profile.sex) == (
-        170,
-        date(1990, 1, 1),
-        "male",
-    )
+def test_profile_from_data() -> None:
     profile = up.profile_from_data(VALID)
     assert (profile.height_cm, profile.birth_date, profile.sex) == (
         165,
         date(1990, 5, 20),
         "female",
     )
-    assert up.profile_from_data({"birth_date": "garbage"}).birth_date == date(1990, 1, 1)
 
 
-def test_migration_moves_profile_into_user() -> None:
-    result = up.migrate_v1_to_v2(
-        {
-            "address": "AA:BB",
-            "height_cm": 180,
-            "birth_year": 1985,
-            "sex": "female",
-            "notify_timeout_seconds": 12,
-        },
-        {"height_cm": 175, "enable_body_composition": True},
-    )
-    assert result.user_data == {
-        "name": "User 1",
-        "height_cm": 175,  # options win over data
-        "birth_date": "1985-01-01",
-        "sex": "female",
-        "slot": 1,
-    }
-    assert result.user_title == "User 1"
-    assert result.entry_data == {"address": "AA:BB", "notify_timeout_seconds": 12}
-    assert result.entry_options == {"enable_body_composition": True}
-
-
-def test_migration_uses_defaults_for_missing_or_bad_values() -> None:
-    result = up.migrate_v1_to_v2(
-        {"address": "AA:BB"}, {"birth_year": "x", "sex": "robot", "height_cm": 9999}
-    )
-    assert result.user_data == {
-        "name": "User 1",
-        "height_cm": 250,
-        "birth_date": "1990-01-01",
-        "sex": "male",
-        "slot": 1,
-    }
-    assert result.entry_data == {"address": "AA:BB"}
-    assert result.entry_options == {}
-
-
-def test_migration_is_idempotent_on_migrated_data() -> None:
-    first = up.migrate_v1_to_v2({"address": "AA:BB", "height_cm": 160}, {})
-    again = up.migrate_v1_to_v2(first.entry_data, first.entry_options)
-    assert again.entry_data == first.entry_data
-    assert again.entry_options == first.entry_options
-
-
-def test_legacy_entity_unique_ids() -> None:
-    assert up.legacy_entity_unique_ids("AA:BB") == (
-        ("number", "AA:BB_height_cm"),
-        ("number", "AA:BB_birth_year"),
-        ("select", "AA:BB_sex"),
-    )
+def test_profile_from_data_rejects_unusable_data() -> None:
+    assert up.profile_from_data({}) is None
+    assert up.profile_from_data(VALID | {"birth_date": "garbage"}) is None
+    assert up.profile_from_data(VALID | {"sex": "other"}) is None
+    assert up.profile_from_data(VALID | {"height_cm": "tall"}) is None

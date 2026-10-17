@@ -1,6 +1,6 @@
 """Pure helpers for the per-user profile stored in "user" config subentries.
 
-Kept free of Home Assistant imports so the validation and migration logic can
+Kept free of Home Assistant imports so the validation logic can
 be unit-tested on its own.
 """
 
@@ -13,15 +13,11 @@ from typing import Any
 
 from .const import (
     CONF_BIRTH_DATE,
-    CONF_BIRTH_YEAR,
     CONF_EXPECTED_WEIGHT_KG,
     CONF_HEIGHT_CM,
     CONF_SEX,
     CONF_SLOT,
     CONF_USER_NAME,
-    DEFAULT_BIRTH_YEAR,
-    DEFAULT_HEIGHT_CM,
-    DEFAULT_SEX,
     MAX_EXPECTED_WEIGHT_KG,
     MAX_HEIGHT_CM,
     MIN_BIRTH_YEAR,
@@ -29,9 +25,6 @@ from .const import (
     MIN_HEIGHT_CM,
     SEXES,
 )
-
-# Keys that moved from the config entry (data/options) into the user subentry.
-LEGACY_PROFILE_KEYS: tuple[str, ...] = (CONF_HEIGHT_CM, CONF_BIRTH_YEAR, CONF_SEX)
 
 DEFAULT_USER_NAME = "User 1"
 
@@ -125,20 +118,17 @@ class UserProfile:
     sex: str
 
 
-def profile_from_data(data: Mapping[str, Any]) -> UserProfile:
-    """Read a user profile from subentry data, falling back to defaults."""
+def profile_from_data(data: Mapping[str, Any]) -> UserProfile | None:
+    """Read a user profile from subentry data, or None if it is unusable."""
     try:
-        height = int(data.get(CONF_HEIGHT_CM, DEFAULT_HEIGHT_CM))
-    except (TypeError, ValueError):
-        height = DEFAULT_HEIGHT_CM
-    birth = parse_birth_date(data.get(CONF_BIRTH_DATE)) or date(DEFAULT_BIRTH_YEAR, 1, 1)
-    sex = str(data.get(CONF_SEX, DEFAULT_SEX))
+        height = int(data[CONF_HEIGHT_CM])
+    except (KeyError, TypeError, ValueError):
+        return None
+    birth = parse_birth_date(data.get(CONF_BIRTH_DATE))
+    sex = data.get(CONF_SEX)
+    if birth is None or sex not in SEXES or height <= 0:
+        return None
     return UserProfile(height_cm=height, birth_date=birth, sex=sex)
-
-
-def default_profile() -> UserProfile:
-    """Profile used when no user has been configured."""
-    return profile_from_data({})
 
 
 def primary_user_data(users: Iterable[Mapping[str, Any]]) -> Mapping[str, Any] | None:
@@ -151,67 +141,3 @@ def primary_user_data(users: Iterable[Mapping[str, Any]]) -> Mapping[str, Any] |
             return 0
 
     return min(users, key=slot, default=None)
-
-
-@dataclass(frozen=True)
-class MigrationResult:
-    """Outcome of the v1 -> v2 config entry migration."""
-
-    user_title: str
-    user_data: dict[str, Any]
-    entry_data: dict[str, Any]
-    entry_options: dict[str, Any]
-
-
-def migrate_v1_to_v2(
-    data: Mapping[str, Any], options: Mapping[str, Any]
-) -> MigrationResult:
-    """Split the single-user profile out of a v1 entry.
-
-    Options take precedence over data, like the v1 runtime lookups did. Missing
-    or malformed values fall back to the defaults. The user is always named
-    "User 1" (the entry title is the scale's name, not a person's).
-    """
-
-    def current(key: str, default: Any) -> Any:
-        return options.get(key, data.get(key, default))
-
-    try:
-        height = int(current(CONF_HEIGHT_CM, DEFAULT_HEIGHT_CM))
-    except (TypeError, ValueError):
-        height = DEFAULT_HEIGHT_CM
-    height = min(MAX_HEIGHT_CM, max(MIN_HEIGHT_CM, height))
-
-    try:
-        birth_year = int(current(CONF_BIRTH_YEAR, DEFAULT_BIRTH_YEAR))
-    except (TypeError, ValueError):
-        birth_year = DEFAULT_BIRTH_YEAR
-    if not 1 <= birth_year <= 9999:
-        birth_year = DEFAULT_BIRTH_YEAR
-
-    sex = str(current(CONF_SEX, DEFAULT_SEX)).lower()
-    if sex not in SEXES:
-        sex = DEFAULT_SEX
-
-    name = DEFAULT_USER_NAME
-    return MigrationResult(
-        user_title=name,
-        user_data={
-            CONF_USER_NAME: name,
-            CONF_HEIGHT_CM: height,
-            CONF_BIRTH_DATE: f"{birth_year:04d}-01-01",
-            CONF_SEX: sex,
-            CONF_SLOT: 1,
-        },
-        entry_data={k: v for k, v in data.items() if k not in LEGACY_PROFILE_KEYS},
-        entry_options={k: v for k, v in options.items() if k not in LEGACY_PROFILE_KEYS},
-    )
-
-
-def legacy_entity_unique_ids(address: str) -> tuple[tuple[str, str], ...]:
-    """Return ``(platform, unique_id)`` of the v1 profile entities to remove."""
-    return (
-        ("number", f"{address}_height_cm"),
-        ("number", f"{address}_birth_year"),
-        ("select", f"{address}_sex"),
-    )

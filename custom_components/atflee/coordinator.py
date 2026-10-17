@@ -27,7 +27,7 @@ from .const import (
 )
 from .atflee_ble.models import AtfleeMeasurement, AtfleeState
 from .session_report import ARM, MEASURE, SessionTrace, build_session_report
-from .user_profile import default_profile, primary_user_data, profile_from_data
+from .user_profile import primary_user_data, profile_from_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
 
     def __init__(self, hass: HomeAssistant, entry: AtfleeConfigEntry) -> None:
         self.entry = entry
+        self._warned_no_profile = False
         self.address: str = entry.data[CONF_ADDRESS]
         self.client = AtfleeBleClient(hass, self.address)
         self._adv_unsub = None
@@ -248,14 +249,22 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
         )
         self._session_task = self.hass.async_create_task(self._run_measurement_session())
 
-    def _primary_profile(self) -> tuple[int, int, str]:
-        """Return (height_cm, age, sex) of the first user (lowest slot)."""
+    def _primary_profile(self) -> tuple[int, int, str] | None:
+        """Return (height_cm, age, sex) of the first user (lowest slot), if any."""
         primary = primary_user_data(
             sub.data
             for sub in self.entry.subentries.values()
             if sub.subentry_type == SUBENTRY_TYPE_USER
         )
-        profile = profile_from_data(primary) if primary else default_profile()
+        profile = profile_from_data(primary) if primary else None
+        if profile is None:
+            if not self._warned_no_profile:
+                self._warned_no_profile = True
+                _LOGGER.warning(
+                    "Atflee: no user profile is configured; body metrics are skipped. "
+                    "Add a user from the integration page"
+                )
+            return None
         age = max(1, age_from_birth_date(profile.birth_date, dt_util.now().date()))
         return profile.height_cm, age, profile.sex
 
@@ -267,7 +276,10 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             or len(measurement.impedances_ohm) < IMPEDANCE_CHANNELS
         ):
             return
-        height_cm, age, sex = self._primary_profile()
+        profile = self._primary_profile()
+        if profile is None:
+            return
+        height_cm, age, sex = profile
         result = calculate_body_composition(
             measurement.weight_kg,
             height_cm,
@@ -332,10 +344,11 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             duration_seconds = prev.connection_duration_seconds if prev else 0
             connection_started_at = prev.connection_started_at if prev else None
 
+        profile = self._primary_profile()
         return AtfleeState(
             measurement=measurement if measurement is not None else (prev.measurement if prev else None),
             last_packet_hex=measurement.raw_hex if measurement is not None else (prev.last_packet_hex if prev else None),
-            user_height_cm=self._primary_profile()[0],
+            user_height_cm=profile[0] if profile else None,
             connected=connected,
             measuring=measuring,
             connection_started_at=connection_started_at,
@@ -471,9 +484,10 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     )
                 )
 
-                if send_enabled:
+                profile = self._primary_profile() if send_enabled else None
+                if profile is not None:
                     now_local = dt_util.now()
-                    height_cm, age, sex = self._primary_profile()
+                    height_cm, age, sex = profile
                     # Standard (non-DST) offset, like the scale's own clock setup.
                     utc_offset = (now_local.utcoffset() or timedelta(0)) - (
                         now_local.dst() or timedelta(0)
@@ -488,7 +502,10 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     )
                     await self.client.send_frames(user_info_frames)
                 else:
-                    _LOGGER.debug("Atflee body composition measurement skipped (disabled)")
+                    _LOGGER.debug(
+                        "Atflee body composition measurement skipped (%s)",
+                        "disabled" if not send_enabled else "no user profile",
+                    )
 
                 self.async_set_updated_data(self._build_state(connected=True, measuring=True))
 
@@ -573,9 +590,9 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
 
                     measurement = self._merge_with_previous_measurement(measurement)
 
-                    height_cm = self._primary_profile()[0]
-                    if measurement.bmi is None and measurement.weight_kg is not None and height_cm > 0:
-                        height_m = height_cm / 100.0
+                    profile = self._primary_profile()
+                    if profile and measurement.bmi is None and measurement.weight_kg is not None:
+                        height_m = profile[0] / 100.0
                         measurement.bmi = round(measurement.weight_kg / (height_m * height_m), 2)
 
                     self.async_set_updated_data(

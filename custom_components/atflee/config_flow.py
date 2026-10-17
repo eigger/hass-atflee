@@ -132,7 +132,7 @@ def _user_schema() -> vol.Schema:
 class AtfleeConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle config flow for Atflee."""
 
-    VERSION = 2
+    VERSION = 1
 
     def __init__(self) -> None:
         self._discovered_devices: dict[str, Discovery] = {}
