@@ -29,6 +29,7 @@
           "expected_weight_kg": "Expected weight (kg, optional)"
         },
         "data_description": {
+          "birth_date": "Type the date as year-month-day, e.g. 1985-03-07 (1985.3.7 and 19850307 also work).",
           "expected_weight_kg": "Used to tell users apart by weight until a first weight is stored."
         }
       }
@@ -42,7 +43,7 @@
       "name_required": "Enter a name.",
       "name_exists": "A user with this name already exists.",
       "invalid_height": "Height must be between 80 and 250 cm.",
-      "invalid_birth_date": "Enter a valid birth date.",
+      "invalid_birth_date": "Enter a valid birth date, e.g. 1985-03-07.",
       "birth_date_in_future": "Birth date cannot be in the future.",
       "birth_date_too_old": "Birth date is too far in the past.",
       "invalid_sex": "Select male or female.",
@@ -139,6 +140,7 @@
             "expected_weight_kg": "Expected weight (kg, optional)"
           },
           "data_description": {
+            "birth_date": "Type the date as year-month-day, e.g. 1985-03-07 (1985.3.7 and 19850307 also work).",
             "expected_weight_kg": "Used to tell users apart by weight until a first weight is stored."
           }
         },
@@ -152,6 +154,7 @@
             "expected_weight_kg": "Expected weight (kg, optional)"
           },
           "data_description": {
+            "birth_date": "Type the date as year-month-day, e.g. 1985-03-07 (1985.3.7 and 19850307 also work).",
             "expected_weight_kg": "Used to tell users apart by weight until a first weight is stored."
           }
         }
@@ -160,7 +163,7 @@
         "name_required": "Enter a name.",
         "name_exists": "A user with this name already exists.",
         "invalid_height": "Height must be between 80 and 250 cm.",
-        "invalid_birth_date": "Enter a valid birth date.",
+        "invalid_birth_date": "Enter a valid birth date, e.g. 1985-03-07.",
         "birth_date_in_future": "Birth date cannot be in the future.",
         "birth_date_too_old": "Birth date is too far in the past.",
         "invalid_sex": "Select male or female.",
