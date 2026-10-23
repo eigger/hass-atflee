@@ -124,3 +124,37 @@
 최종 검토 시 적용 대상 필수 `TODO`와 `EXCEPTION`, 이유가 있는 `N/A`, 권장 미채택을 구분해 적습니다. CI 성공만으로 실물 기기 검증을 주장하지 않습니다. 실물 검증을 수행했다면 모델·펌웨어·어댑터/proxy·연결 경로와 결과를 별도로 기록합니다.
 
 중앙 보고는 [적용 현황표](https://github.com/eigger/hass-repo-standards/blob/main/docs/adoption-status.md)의 자기 리포 행에 반영합니다. 리뷰 지적·수정·재검증 결과와 중앙 갱신 실패 사유가 있으면 남은 작업에도 기록합니다.
+
+
+## 2026-10-23 HACS ZIP and Downloads (scoped)
+
+- Target base: `a568efe9d17d8ecee71d4308004afdf2a17ddafe`; reviewed release central: `fd4162c0b93fbe8e109f99c787773ae09ba157e1`.
+- Scope: HACS-04/CI-11 release ZIP and DOC-03/05 Downloads replacing Analytics Usage. No release is created during this update.
+- Local scoped validation: PASS — canonical badge check, no Analytics Usage, release metadata/caller contract, actionlint 1.7.12, native git diff --check, unchanged tracked integration/manifest/dependencies/tests.
+- Actual archive build: PASS at `3edfc25337f3f230f7358af3f6eb4e0c19c793ef`; `atflee.zip`, 28 files, SHA256 `b3bd67302d9e41238c524ebc98ed477ee3afd736ed17c4026610c217782e9dd9`. All archive members matched checkout bytes; manifest.json and __init__.py are at ZIP root. Final documentation-only follow-up preserves this integration tree. Windows Python 3.14.6; validation WSL Python 3.14.4/PyYAML 6.0.3/packaging 26.0.
+- Full central integration checker: FAIL (pre-existing or unadopted contracts outside this scoped update; not treated as PASS). Findings:
+
+```text
+DOC-01 README.md: Exactly one ordered header marker pair required
+DOC-01 README.ko.md: Exactly one ordered header marker pair required
+HA-02 custom_components/atflee/manifest.json: categories requires 1–3 actual product categories (HA-02 project policy)
+TEST-08 tests/components/atflee/test_binary_sensor.py: Required contract file is missing
+TEST-08 tests/components/atflee/test_select.py: Required contract file is missing
+TEST-08 tests/components/atflee/test_sensor.py: Required contract file is missing
+TEST-08 tests/components/atflee/test_switch.py: Required contract file is missing
+HA-13 custom_components/__init__.py: Required contract file is missing
+GOV-02 .github/workflows/tests.yml: standards-ref must equal the reviewed reusable workflow SHA
+GOV-02 .github/workflows/tests.yml: standards-ref must equal the reviewed reusable workflow SHA
+GOV-02 .github/workflows/update_dependencies.yml: standards-ref must equal the reviewed reusable workflow SHA
+TEST-03 tests/conftest.py: must match the central template exactly
+TEST-08 tests/components/atflee/conftest.py: Exactly one ordered domain-fixtures marker pair required
+CI-02 .github/workflows/tests.yml: name and events must match the central template (actual default branch)
+CI-01 .github/workflows/validate.yml: central standards composite action pinned to full SHA required
+DOC-07 docs/troubleshooting.md: Use the central troubleshooting H2 headings in their fixed order
+DOC-07 README.md: README must link to matching-language local troubleshooting and blesession proxy setup
+DOC-07 docs/troubleshooting.ko.md: Use the central troubleshooting H2 headings in their fixed order
+DOC-07 README.ko.md: README must link to matching-language local troubleshooting and blesession proxy setup
+```
+
+- Existing CI workflows are preserved, except hass-kocom-smarthome where matching reviewed central references are synchronized. Existing support minimum and prior exceptions remain.
+- Independent review and remote CI: tracked in this branch's pull request; merge requires resolved actionable findings and successful applicable checks. No real release upload, device or new real HA runtime validation is claimed by these local packaging checks.
