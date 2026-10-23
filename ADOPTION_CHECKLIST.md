@@ -124,3 +124,10 @@
 최종 검토 시 적용 대상 필수 `TODO`와 `EXCEPTION`, 이유가 있는 `N/A`, 권장 미채택을 구분해 적습니다. CI 성공만으로 실물 기기 검증을 주장하지 않습니다. 실물 검증을 수행했다면 모델·펌웨어·어댑터/proxy·연결 경로와 결과를 별도로 기록합니다.
 
 중앙 보고는 [적용 현황표](https://github.com/eigger/hass-repo-standards/blob/main/docs/adoption-status.md)의 자기 리포 행에 반영합니다. 리뷰 지적·수정·재검증 결과와 중앙 갱신 실패 사유가 있으면 남은 작업에도 기록합니다.
+
+
+## 2026-10-23 HACS ZIP and Downloads (scoped)
+
+- Target base: `a568efe9d17d8ecee71d4308004afdf2a17ddafe`; reviewed release central: `fd4162c0b93fbe8e109f99c787773ae09ba157e1`.
+- Scope: HACS-04/CI-11 release ZIP and DOC-03/05 Downloads replacing Analytics Usage. No release is created during this update.
+- Validation: pending badge/release contract checks, actionlint, actual local ZIP build and remote PR CI. Full adoption, device and real release upload are not asserted by this partial change.

@@ -1,7 +1,7 @@
 # 적용한 공통 규칙
 
 - 표준: https://github.com/eigger/hass-repo-standards/tree/ff46b0c8d9ba53b1d35ab9a4aa38f4db26c06870
-- 참조 커밋 SHA: `ff46b0c8d9ba53b1d35ab9a4aa38f4db26c06870` (2026-10-17 원격 main 직접 확인)
+- 참조 커밋 SHA: `ff46b0c8d9ba53b1d35ab9a4aa38f4db26c06870`
 - 채택일: 2026-10-17 착수; 구현4da5699 master 게시·독립 로컬/원격 검증 완료; 마감 문서 commit CI는 별도 확인
 - profile: integration / ha
 - 적용 점검표: [ADOPTION_CHECKLIST.md](ADOPTION_CHECKLIST.md)
@@ -28,3 +28,12 @@
 ### 브랜드 확인 범위
 
 기존 `custom_components/atflee/brand/icon.png`(PNG256×256 RGBA)·`logo.png`(PNG512×128 RGBA)를 보존합니다. 선택 2x/dark 미제공. 확인된 출처는 eigger가 추가한 [최초 커밋68c355c](https://github.com/eigger/hass-atflee/commit/68c355c97d2e65ee913c4b084c565f96bf50be1c)·[PR #1](https://github.com/eigger/hass-atflee/pull/1)이며 리포 [MIT License](LICENSE)는 Copyright2026eigger이고 별도 자산 제외 문서가 없습니다. 이 근거와 validator 결과를 구분하고 제3자 권리를 별도로 검증했다고 주장하지 않습니다. 최소 HA2025.8의 local brand UI 지원이나 이번 UI 렌더링을 검증했다고 주장하지 않습니다.
+
+- Reviewed release standards SHA: `fd4162c0b93fbe8e109f99c787773ae09ba157e1`
+
+
+## 2026-10-23 ZIP release and Downloads update
+
+Base commit: `a568efe9d17d8ecee71d4308004afdf2a17ddafe`. HACS remains Custom. `hacs.json` now selects `atflee.zip`; publishing the next release builds and attaches that integration ZIP through the pinned central action. Analytics Usage is replaced by Downloads. The archive contains tracked integration files at its root. No existing release/tag/assets are modified.
+
+Implementation and review: root; generated release caller reuses the independently reviewed central ZIP contract. Support minimum, manifest, code, dependencies, README body and prior adoption exceptions are preserved. Verification evidence is recorded in ADOPTION_CHECKLIST.md; this scoped update does not establish full standards compliance.
