@@ -7,6 +7,9 @@
       "service_uuid": "0000ffb0-0000-1000-8000-00805f9b34fb"
     }
   ],
+  "categories": [
+    "health_wellbeing"
+  ],
   "codeowners": [
     "@eigger"
   ],

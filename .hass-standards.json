@@ -13,5 +13,23 @@
   "installation_links": {
     "README.md": "#installation",
     "README.ko.md": "#설치"
+  },
+  "readme": {
+    "title": "Atflee BLE for Home Assistant",
+    "descriptions": {
+      "en": "A HACS custom integration that reads Atflee BLE scales directly in Home Assistant, with per-user weight, body composition and connection diagnostics.",
+      "ko": "Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HACS 커스텀 통합입니다. 사용자별 체중·체성분과 연결 진단을 제공합니다."
+    },
+    "issues": true,
+    "discussions": true,
+    "license_name": "MIT License",
+    "related_projects": []
+  },
+  "categories_review": {
+    "value": [
+      "health_wellbeing"
+    ],
+    "integration_type": "device",
+    "source": "README Supported devices and Features: Atflee body-weight and body-composition scales. Reviewed Core integration_categories.json ec18d8b25d1ee39aa8b85a72a170e42bee33228c."
   }
 }

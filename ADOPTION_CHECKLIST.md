@@ -185,3 +185,14 @@ DOC-07 docs/troubleshooting.ko.md: Use the central troubleshooting H2 headings i
 DOC-07 README.ko.md: README must link to matching-language local troubleshooting and blesession proxy setup
 ```
 - 독립 리뷰: 별도 review_checker_rollout 담당자가 19개 리포의 workflow 69개·기존 job 100개를 구조 비교했습니다. 새 CI 회귀 지적 없음. 기존 job ID·입력·권한·지원 최소와 통합 코드 보존 및 새 standards job의 중앙 템플릿 일치 확인. 실행 변경 없는 이 기록 추가 전 작업 트리를 검토했습니다.
+
+
+## 2026-10-25 CI 실패 보완
+
+- 적용 계획과 범위: 기존 README 본문·기기 제한·개인정보 고지는 보존하고 공통 관리 영역을 지정해 중앙 렌더러로 생성합니다. 제품 용도에 맞는 categories와 검토 근거, 빈 custom_components 패키지 파일, 정확한 공통 fixture, 의미 있는 플랫폼 테스트 및 양언어 기기별 문제 해결 문서를 보완합니다. 기존 테스트는 삭제하지 않으며 이름별 파일로 옮기거나 실제 HA 검증을 추가합니다.
+- 제품 분류: 체중·체성분 저울은 health_wellbeing. reviewed Core ec18d8b25d1ee39aa8b85a72a170e42bee33228c taxonomy 기준이며 같은 공식 Core Hassfest 실행 ref를 사용합니다. 기존 지원 최소·버전·의존성·동작 코드는 유지합니다.
+- 최신 중앙 검사기 1863343638014adb8a4001afc8fddc1a27dc500f의 check_integration.py PASS. actionlint, Ruff 0.17.2 check 및 format --check, git diff --check PASS. 실패 무시·승인 예외·가짜 통과 테스트를 추가하지 않았습니다.
+- 실제 HA current: 격리 환경 Python 3.14.5 / HA 2026.10.2 / pytest-homeassistant-custom-component 0.13.373 / blesession 0.9.0, `python -m pytest tests/components/atflee/ -q`: **181 passed**.
+- 정확한 지원 최소: 별도 격리 환경 Python 3.13.14 / HA 2025.8.0 / pytest-homeassistant-custom-component 0.13.269 / blesession 0.9.0, 같은 명령: **181 passed**.
+- 실제 설치 blesession의 최신 선택값과 선언 하한이 모두 0.9.0으로 같아 위 실제 실행이 양쪽 버전을 검증합니다. 두 환경의 uv pip check 모두 PASS. HA component 요구사항은 해당 환경에 설치한 HA manifest에서 읽고 테스트·통합 요구사항과 함께 resolver로 정합화했습니다.
+- 별도 담당 root가 독립 리뷰하며 원격 PR CI는 새 head push 후 다시 확인합니다. 위 결과는 로컬 검증이며 원격 CI 성공이나 새 실물 검증으로 대체하지 않습니다.
