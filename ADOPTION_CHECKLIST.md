@@ -158,3 +158,30 @@ DOC-07 README.ko.md: README must link to matching-language local troubleshooting
 
 - Existing CI workflows are preserved, except hass-kocom-smarthome where matching reviewed central references are synchronized. Existing support minimum and prior exceptions remain.
 - Independent review and remote CI: tracked in this branch's pull request; merge requires resolved actionable findings and successful applicable checks. No real release upload, device or new real HA runtime validation is claimed by these local packaging checks.
+
+
+## 2026-10-25 중앙 검사기 부분 갱신 검증
+
+- 검토한 중앙 SHA: `1863343638014adb8a4001afc8fddc1a27dc500f`; 적용 시작 커밋: `4a836294477b1180688da8a23cabf82680276134`.
+- 범위: 중앙 pin·standards-ref·검토 기준 기록 정합화 및 누락 standards job 추가. HA 구현·요구 버전은 유지합니다.
+- 로컬: Python 3.14.5 / PyYAML 6.0.3, `python scripts/check_integration.py <target>` (검토한 중앙 source에서 실행): FAIL — 아래 미충족 항목을 확인했으며 성공으로 표시하지 않음.
+- actionlint: PASS. PR CI·독립 리뷰 결과는 PR 링크와 check 결과를 확인합니다. 이 로컬 결과만으로 전체 채택 완료를 주장하지 않습니다.
+- 수정 전에도 최신 검사기로 검사 시 19개 진단이 있었습니다. 이번 검사기가 드러내는 잔여 항목은 다음과 같습니다. 승인 예외나 실패 무시를 추가하지 않았습니다.
+
+```text
+DOC-01 README.md: Exactly one ordered header marker pair required
+DOC-01 README.ko.md: Exactly one ordered header marker pair required
+HA-02 custom_components/atflee/manifest.json: categories requires 1–3 actual product categories (HA-02 project policy)
+TEST-08 tests/components/atflee/test_binary_sensor.py: Required contract file is missing
+TEST-08 tests/components/atflee/test_select.py: Required contract file is missing
+TEST-08 tests/components/atflee/test_sensor.py: Required contract file is missing
+TEST-08 tests/components/atflee/test_switch.py: Required contract file is missing
+HA-13 custom_components/__init__.py: Required contract file is missing
+TEST-03 tests/conftest.py: must match the central template exactly
+TEST-08 tests/components/atflee/conftest.py: Exactly one ordered domain-fixtures marker pair required
+DOC-07 docs/troubleshooting.md: Use the central troubleshooting H2 headings in their fixed order
+DOC-07 README.md: README must link to matching-language local troubleshooting and blesession proxy setup
+DOC-07 docs/troubleshooting.ko.md: Use the central troubleshooting H2 headings in their fixed order
+DOC-07 README.ko.md: README must link to matching-language local troubleshooting and blesession proxy setup
+```
+- 독립 리뷰: 별도 review_checker_rollout 담당자가 19개 리포의 workflow 69개·기존 job 100개를 구조 비교했습니다. 새 CI 회귀 지적 없음. 기존 job ID·입력·권한·지원 최소와 통합 코드 보존 및 새 standards job의 중앙 템플릿 일치 확인. 실행 변경 없는 이 기록 추가 전 작업 트리를 검토했습니다.
