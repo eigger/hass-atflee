@@ -1,11 +1,10 @@
 name: Tests
-on:
+'on':
   push:
-    branches: [master]
-  pull_request:
-  workflow_dispatch:
-  schedule:
-    - cron: "23 4 * * 1"
+    branches:
+    - master
+  pull_request: null
+  workflow_dispatch: null
 permissions:
   contents: read
 concurrency:
@@ -13,8 +12,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   current:
-    uses: eigger/hass-repo-standards/.github/workflows/python-tests.yml@ff46b0c8d9ba53b1d35ab9a4aa38f4db26c06870 # reviewed standards commit
+    uses: eigger/hass-repo-standards/.github/workflows/python-tests.yml@ca740d88b32fa5dcbc94c41fce2908450c76ed50 # reviewed standards commit
     with:
+      standards-ref: ca740d88b32fa5dcbc94c41fce2908450c76ed50
       domain: atflee
       python-versions: '["3.14"]'
       lint-python-version: '3.14'
@@ -25,8 +25,9 @@ jobs:
       dependency-modes: '["current", "minimum"]'
       minimum-packages: '["blesession"]'
   minimum-ha:
-    uses: eigger/hass-repo-standards/.github/workflows/python-tests.yml@ff46b0c8d9ba53b1d35ab9a4aa38f4db26c06870 # reviewed standards commit
+    uses: eigger/hass-repo-standards/.github/workflows/python-tests.yml@ca740d88b32fa5dcbc94c41fce2908450c76ed50 # reviewed standards commit
     with:
+      standards-ref: ca740d88b32fa5dcbc94c41fce2908450c76ed50
       domain: atflee
       python-versions: '["3.13"]'
       lint-python-version: '3.14'

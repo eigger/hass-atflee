@@ -11,8 +11,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    uses: eigger/hass-repo-standards/.github/workflows/dependency-update.yml@ff46b0c8d9ba53b1d35ab9a4aa38f4db26c06870 # reviewed standards commit
+    uses: eigger/hass-repo-standards/.github/workflows/dependency-update.yml@ca740d88b32fa5dcbc94c41fce2908450c76ed50 # reviewed standards commit
     with:
+      standards-ref: ca740d88b32fa5dcbc94c41fce2908450c76ed50
       domain: atflee
       packages: '["blesession"]'
       python-version: '3.14'

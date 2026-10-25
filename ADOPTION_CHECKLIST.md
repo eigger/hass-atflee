@@ -158,3 +158,49 @@ DOC-07 README.ko.md: README must link to matching-language local troubleshooting
 
 - Existing CI workflows are preserved, except hass-kocom-smarthome where matching reviewed central references are synchronized. Existing support minimum and prior exceptions remain.
 - Independent review and remote CI: tracked in this branch's pull request; merge requires resolved actionable findings and successful applicable checks. No real release upload, device or new real HA runtime validation is claimed by these local packaging checks.
+
+
+## 2026-10-25 중앙 검사기 부분 갱신 검증
+
+- 검토한 중앙 SHA: `1863343638014adb8a4001afc8fddc1a27dc500f`; 적용 시작 커밋: `4a836294477b1180688da8a23cabf82680276134`.
+- 범위: 중앙 pin·standards-ref·검토 기준 기록 정합화 및 누락 standards job 추가. HA 구현·요구 버전은 유지합니다.
+- 로컬: Python 3.14.5 / PyYAML 6.0.3, `python scripts/check_integration.py <target>` (검토한 중앙 source에서 실행): FAIL — 아래 미충족 항목을 확인했으며 성공으로 표시하지 않음.
+- actionlint: PASS. PR CI·독립 리뷰 결과는 PR 링크와 check 결과를 확인합니다. 이 로컬 결과만으로 전체 채택 완료를 주장하지 않습니다.
+- 수정 전에도 최신 검사기로 검사 시 19개 진단이 있었습니다. 이번 검사기가 드러내는 잔여 항목은 다음과 같습니다. 승인 예외나 실패 무시를 추가하지 않았습니다.
+
+```text
+DOC-01 README.md: Exactly one ordered header marker pair required
+DOC-01 README.ko.md: Exactly one ordered header marker pair required
+HA-02 custom_components/atflee/manifest.json: categories requires 1–3 actual product categories (HA-02 project policy)
+TEST-08 tests/components/atflee/test_binary_sensor.py: Required contract file is missing
+TEST-08 tests/components/atflee/test_select.py: Required contract file is missing
+TEST-08 tests/components/atflee/test_sensor.py: Required contract file is missing
+TEST-08 tests/components/atflee/test_switch.py: Required contract file is missing
+HA-13 custom_components/__init__.py: Required contract file is missing
+TEST-03 tests/conftest.py: must match the central template exactly
+TEST-08 tests/components/atflee/conftest.py: Exactly one ordered domain-fixtures marker pair required
+DOC-07 docs/troubleshooting.md: Use the central troubleshooting H2 headings in their fixed order
+DOC-07 README.md: README must link to matching-language local troubleshooting and blesession proxy setup
+DOC-07 docs/troubleshooting.ko.md: Use the central troubleshooting H2 headings in their fixed order
+DOC-07 README.ko.md: README must link to matching-language local troubleshooting and blesession proxy setup
+```
+- 독립 리뷰: 별도 review_checker_rollout 담당자가 19개 리포의 workflow 69개·기존 job 100개를 구조 비교했습니다. 새 CI 회귀 지적 없음. 기존 job ID·입력·권한·지원 최소와 통합 코드 보존 및 새 standards job의 중앙 템플릿 일치 확인. 실행 변경 없는 이 기록 추가 전 작업 트리를 검토했습니다.
+
+
+## 2026-10-25 CI 실패 보완
+
+- 적용 계획과 범위: 기존 README 본문·기기 제한·개인정보 고지는 보존하고 공통 관리 영역을 지정해 중앙 렌더러로 생성합니다. 제품 용도에 맞는 categories와 검토 근거, 빈 custom_components 패키지 파일, 정확한 공통 fixture, 의미 있는 플랫폼 테스트 및 양언어 기기별 문제 해결 문서를 보완합니다. 기존 테스트는 삭제하지 않으며 이름별 파일로 옮기거나 실제 HA 검증을 추가합니다.
+- 제품 분류: 체중·체성분 저울은 health_wellbeing. reviewed Core ec18d8b25d1ee39aa8b85a72a170e42bee33228c taxonomy 기준이며 같은 공식 Core Hassfest 실행 ref를 사용합니다. 기존 지원 최소·버전·의존성·동작 코드는 유지합니다.
+- 최신 중앙 검사기 1863343638014adb8a4001afc8fddc1a27dc500f의 check_integration.py PASS. actionlint, Ruff 0.17.2 check 및 format --check, git diff --check PASS. 실패 무시·승인 예외·가짜 통과 테스트를 추가하지 않았습니다.
+- 실제 HA current: 격리 환경 Python 3.14.5 / HA 2026.10.2 / pytest-homeassistant-custom-component 0.13.373 / blesession 0.9.0, `python -m pytest tests/components/atflee/ -q`: **181 passed**.
+- 정확한 지원 최소: 별도 격리 환경 Python 3.13.14 / HA 2025.8.0 / pytest-homeassistant-custom-component 0.13.269 / blesession 0.9.0, 같은 명령: **181 passed**.
+- 실제 설치 blesession의 최신 선택값과 선언 하한이 모두 0.9.0으로 같아 위 실제 실행이 양쪽 버전을 검증합니다. 두 환경의 uv pip check 모두 PASS. HA component 요구사항은 해당 환경에 설치한 HA manifest에서 읽고 테스트·통합 요구사항과 함께 resolver로 정합화했습니다.
+- 별도 담당 root가 독립 리뷰하며 원격 PR CI는 새 head push 후 다시 확인합니다. 위 결과는 로컬 검증이며 원격 CI 성공이나 새 실물 검증으로 대체하지 않습니다.
+
+
+### 2026-10-25 Standards workflow 분리 검증
+
+- 분리 시작 커밋: `2ec068e7885f1ca0d23cc537bfdd3d543ce6d9f3`; 검토 중앙 소스 `ca740d88b32fa5dcbc94c41fce2908450c76ed50` (중앙 PR #24). Validate는 HACS/Hassfest job을 그대로 유지하며 중앙 job만 standards.yml로 이동하고 표시 이름을 Standards로 변경합니다.
+- 독립 리뷰: root 구현의 19개 리포에 대해 별도 fix_scale_atflee_ci 담당자가 Validate job 19개와 이동 job 19개의 YAML 정의를 비교했습니다. 파일 이동·표시 이름 외 실제 검사 단계·이벤트·권한·timeout·입력 변경 없음. 중앙 위치 인식 변경은 root가 별도 독립 리뷰했습니다.
+- 로컬: 새 중앙 검사기·actionlint·diff 검사 PASS. 중앙 전체232개·관련38개 회귀 테스트와 양 배치19개 동등성 검사 PASS. 모든 대상 기본 브랜치의 branch protection·rulesets 조회에서 필수 검사 이름 설정이 없어 이름 변경으로 인한 대기 충돌 없음. 원격 CI는 이 PR의 최신 head에서 확인합니다.
+- 검사 기준을 추가하거나 완화하지 않았으며 기존 inline 배치도 같은 기준으로 지원합니다. 실제 runtime·지원 최소·의존성은 이 파일 분리에서 변경하지 않습니다.

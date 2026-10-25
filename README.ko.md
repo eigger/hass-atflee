@@ -1,4 +1,9 @@
-# Home Assistant용 Atflee BLE
+<!-- hass-standards:header:start -->
+# Atflee BLE for Home Assistant
+
+Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HACS 커스텀 통합입니다. 사용자별 체중·체성분과 연결 진단을 제공합니다.
+
+[English](README.md) | **한국어**
 
 <!-- hass-standards:badges:start -->
 [![Release](https://img.shields.io/github/v/release/eigger/hass-atflee?style=flat)](https://github.com/eigger/hass-atflee/releases)
@@ -9,10 +14,7 @@
 [![License](https://img.shields.io/github/license/eigger/hass-atflee?style=flat)](LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/eigger/hass-atflee/total?style=flat&color=41BDF5&label=Downloads)](https://github.com/eigger/hass-atflee/releases)
 <!-- hass-standards:badges:end -->
-
-[English](README.md) | **한국어**
-
-Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HACS 커스텀 통합입니다. 사용자별 체중·체성분과 연결 진단을 제공합니다.
+<!-- hass-standards:header:end -->
 
 ## 지원 기기
 
@@ -26,6 +28,10 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HA
 
 ## 설치
 
+<!-- hass-standards:installation:start -->
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=eigger&repository=hass-atflee&category=integration)
+<!-- hass-standards:installation:end -->
+
 1. HACS **사용자 지정 저장소**에 `https://github.com/eigger/hass-atflee`를 **통합** 유형으로 추가하고 **Atflee**를 설치합니다.
 2. HA를 재시작합니다. 수동 설치는 `custom_components/atflee/`를 HA 설정의 `custom_components/` 아래로 복사한 뒤 재시작합니다.
 3. **설정 → 기기 및 서비스 → 통합 추가 → Atflee** 또는 Bluetooth 자동 발견 항목에서 설정합니다.
@@ -37,7 +43,7 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HA
 
 - 소비자용 체성분·평가 값은 추정치이며 **의료 조언이 아닙니다**. 일부 계산식의 척도는 다른 기기와 비교 검증되지 않았습니다.
 - **0.3.2 이하에서 업그레이드**했다면 사용자를 추가해야 체중을 기록합니다. 이전 프로필은 자동 이관되지 않습니다. [업그레이드 절차](docs/usage.ko.md#032-이하에서-업그레이드).
-- 광고 발견과 GATT 연결 성공은 다릅니다. 공식 앱 연결을 해제하고 필요하면 휴대폰의 페어링을 지우세요. 정상 동작하는 로컬 어댑터를 사용할 수 있으며 가까운 proxy로 배치를 개선할 수 있습니다. [Bluetooth 프록시 설정](https://github.com/eigger/hass-repo-standards/blob/main/docs/bluetooth.ko.md) · [문제 해결](docs/troubleshooting.ko.md).
+- 광고 발견과 GATT 연결 성공은 다릅니다. 공식 앱 연결을 해제하고 필요하면 휴대폰의 페어링을 지우세요. 정상 동작하는 로컬 어댑터를 사용할 수 있으며 가까운 proxy로 배치를 개선할 수 있습니다. [Bluetooth 프록시 설정](https://github.com/eigger/blesession/blob/main/docs/bluetooth.ko.md) · [문제 해결](docs/troubleshooting.ko.md).
 - 이번 공통화에서 새로운 실물 기기·펌웨어·proxy 보드를 검증하지 않았습니다.
 
 ## 문서
@@ -51,8 +57,20 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HA
 
 Usage는 **HA Analytics 데이터 제공에 동의한 설치 집계**이며 전체 설치 수나 사람 수가 아닙니다. 미집계·조회 실패는 0 설치를 의미하지 않습니다.
 
-## 지원·라이선스
+공개 로그에서 프로필·측정값·주소·인증정보를 제거하세요.
 
-버그는 [Issues](https://github.com/eigger/hass-atflee/issues), 질문·제안은 [Discussions](https://github.com/eigger/hass-atflee/discussions)를 사용하세요. 공개 로그에서 프로필·측정값·주소·인증정보를 제거하세요.
+<!-- hass-standards:support:start -->
+## 지원
 
-[MIT License](LICENSE)로 배포합니다.
+- [Issues](https://github.com/eigger/hass-atflee/issues): 버그를 신고하거나 기능을 요청하세요.
+- [Discussions](https://github.com/eigger/hass-atflee/discussions): 질문하고 사용 경험을 공유하세요.
+<!-- hass-standards:support:end -->
+
+<!-- hass-standards:related-projects:start -->
+<!-- hass-standards:related-projects:end -->
+
+<!-- hass-standards:license:start -->
+## 라이선스
+
+[MIT License](LICENSE) 라이선스로 배포됩니다.
+<!-- hass-standards:license:end -->
