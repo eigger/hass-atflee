@@ -49,7 +49,7 @@ python -c "from importlib.metadata import version; print({p: version(p) for p in
 
 ## 의존성·문서 변경
 
-런타임 패키지는 manifest requirements, HA domain은 dependencies/after_dependencies, 테스트·린트 도구는 별도 requirements에 둡니다. [공통 의존성 추가 절차](https://github.com/eigger/hass-repo-standards/blob/ff46b0c8d9ba53b1d35ab9a4aa38f4db26c06870/docs/dependencies.md)에 따라 extras·marker·연산자·호환 플랫폼·라이선스와 최소/current HA 설치를 검토합니다. bot은 새 하한 tree를 검증한 후 PR로 제안하며 실패를 숨기지 않습니다.
+런타임 패키지는 manifest requirements, HA domain은 dependencies/after_dependencies, 테스트·린트 도구는 별도 requirements에 둡니다. [공통 의존성 추가 절차](https://github.com/eigger/hass-repo-standards/blob/v1.0.0/docs/dependencies.md)에 따라 extras·marker·연산자·호환 플랫폼·라이선스와 최소/current HA 설치를 검토합니다. bot은 새 하한 tree를 검증한 후 PR로 제안하며 실패를 숨기지 않습니다.
 
 README는 영어/한국어 빠른 시작을 유지하고 상세 사용·문제 해결은 docs에 보존합니다. 배지는 `.hass-standards.json`과 관리 주석으로 양쪽을 함께 갱신합니다. 중앙 checkout의 `python3 scripts/sync_badges.py /path/to/hass-atflee --check`로 확인합니다. Usage는 Analytics 조회 성공 여부와 무관하게 실제 domain `atflee`를 사용합니다. 로그·fixture 공개 전 주소/프로필/측정값을 제거하세요.
 
