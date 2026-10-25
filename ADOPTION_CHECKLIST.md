@@ -196,3 +196,11 @@ DOC-07 README.ko.md: README must link to matching-language local troubleshooting
 - 정확한 지원 최소: 별도 격리 환경 Python 3.13.14 / HA 2025.8.0 / pytest-homeassistant-custom-component 0.13.269 / blesession 0.9.0, 같은 명령: **181 passed**.
 - 실제 설치 blesession의 최신 선택값과 선언 하한이 모두 0.9.0으로 같아 위 실제 실행이 양쪽 버전을 검증합니다. 두 환경의 uv pip check 모두 PASS. HA component 요구사항은 해당 환경에 설치한 HA manifest에서 읽고 테스트·통합 요구사항과 함께 resolver로 정합화했습니다.
 - 별도 담당 root가 독립 리뷰하며 원격 PR CI는 새 head push 후 다시 확인합니다. 위 결과는 로컬 검증이며 원격 CI 성공이나 새 실물 검증으로 대체하지 않습니다.
+
+
+### 2026-10-25 Standards workflow 분리 검증
+
+- 분리 시작 커밋: `2ec068e7885f1ca0d23cc537bfdd3d543ce6d9f3`; 검토 중앙 소스 `ca740d88b32fa5dcbc94c41fce2908450c76ed50` (중앙 PR #24). Validate는 HACS/Hassfest job을 그대로 유지하며 중앙 job만 standards.yml로 이동하고 표시 이름을 Standards로 변경합니다.
+- 독립 리뷰: root 구현의 19개 리포에 대해 별도 fix_scale_atflee_ci 담당자가 Validate job 19개와 이동 job 19개의 YAML 정의를 비교했습니다. 파일 이동·표시 이름 외 실제 검사 단계·이벤트·권한·timeout·입력 변경 없음. 중앙 위치 인식 변경은 root가 별도 독립 리뷰했습니다.
+- 로컬: 새 중앙 검사기·actionlint·diff 검사 PASS. 중앙 전체232개·관련38개 회귀 테스트와 양 배치19개 동등성 검사 PASS. 모든 대상 기본 브랜치의 branch protection·rulesets 조회에서 필수 검사 이름 설정이 없어 이름 변경으로 인한 대기 충돌 없음. 원격 CI는 이 PR의 최신 head에서 확인합니다.
+- 검사 기준을 추가하거나 완화하지 않았으며 기존 inline 배치도 같은 기준으로 지원합니다. 실제 runtime·지원 최소·의존성은 이 파일 분리에서 변경하지 않습니다.
