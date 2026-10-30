@@ -12,7 +12,7 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HA
 [![Tests](https://img.shields.io/github/actions/workflow/status/eigger/hass-atflee/tests.yml?branch=master&style=flat&label=Tests)](https://github.com/eigger/hass-atflee/actions/workflows/tests.yml)
 [![Validate](https://img.shields.io/github/actions/workflow/status/eigger/hass-atflee/validate.yml?branch=master&style=flat&label=Validate)](https://github.com/eigger/hass-atflee/actions/workflows/validate.yml)
 [![License](https://img.shields.io/github/license/eigger/hass-atflee?style=flat)](LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/eigger/hass-atflee/total?style=flat&color=41BDF5&label=Downloads)](https://github.com/eigger/hass-atflee/releases)
+[![Downloads](https://img.shields.io/github/downloads/eigger/hass-atflee/latest/total?style=flat&color=41BDF5&label=Downloads)](https://github.com/eigger/hass-atflee/releases)
 <!-- hass-standards:badges:end -->
 <!-- hass-standards:header:end -->
 
