@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   current:
-    uses: eigger/hass-repo-standards/.github/workflows/python-tests.yml@v1.1.4 # reviewed standards commit
+    uses: eigger/hass-repo-standards/.github/workflows/python-tests.yml@v1.1.5 # reviewed standards commit
     with:
       domain: atflee
       python-versions: '["3.14"]'
@@ -23,7 +23,7 @@ jobs:
       dependency-modes: '["current", "minimum"]'
       minimum-packages: '["blesession"]'
   minimum-ha:
-    uses: eigger/hass-repo-standards/.github/workflows/python-tests.yml@v1.1.4 # reviewed standards commit
+    uses: eigger/hass-repo-standards/.github/workflows/python-tests.yml@v1.1.5 # reviewed standards commit
     with:
       domain: atflee
       python-versions: '["3.13"]'

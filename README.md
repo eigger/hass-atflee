@@ -12,7 +12,7 @@ A HACS custom integration that reads Atflee BLE scales directly in Home Assistan
 [![Tests](https://img.shields.io/github/actions/workflow/status/eigger/hass-atflee/tests.yml?branch=master&style=flat&label=Tests)](https://github.com/eigger/hass-atflee/actions/workflows/tests.yml)
 [![Validate](https://img.shields.io/github/actions/workflow/status/eigger/hass-atflee/validate.yml?branch=master&style=flat&label=Validate)](https://github.com/eigger/hass-atflee/actions/workflows/validate.yml)
 [![License](https://img.shields.io/github/license/eigger/hass-atflee?style=flat)](LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/eigger/hass-atflee/total?style=flat&color=41BDF5&label=Downloads)](https://github.com/eigger/hass-atflee/releases)
+[![Downloads](https://img.shields.io/github/downloads/eigger/hass-atflee/latest/total?style=flat&color=41BDF5&label=Downloads)](https://github.com/eigger/hass-atflee/releases)
 <!-- hass-standards:badges:end -->
 <!-- hass-standards:header:end -->
 
