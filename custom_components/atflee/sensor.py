@@ -386,7 +386,11 @@ def _is_customised(reg_entry: er.RegistryEntry) -> bool:
 
 def _has_stored_value(hass: HomeAssistant, entity_id: str) -> bool:
     """Return True when the entity had a real value before the last shutdown."""
-    stored = async_get_restore_state(hass).last_states.get(entity_id)
+    data = async_get_restore_state(hass)
+    if hasattr(data, "async_get_stored_state"):
+        stored = data.async_get_stored_state(entity_id)
+    else:  # HA before 2026.11 keeps a plain dict.
+        stored = data.last_states.get(entity_id)
     return stored is not None and stored.state.state not in (
         STATE_UNKNOWN,
         STATE_UNAVAILABLE,
