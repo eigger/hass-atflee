@@ -1,7 +1,7 @@
 <!-- hass-standards:header:start -->
 # Atflee BLE for Home Assistant
 
-Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HACS 커스텀 통합입니다. 사용자별 체중·체성분과 연결 진단을 제공합니다.
+Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 커스텀 통합입니다. 사용자별 체중·체성분과 연결 진단을 제공합니다.
 
 [English](README.md) | **한국어**
 
@@ -20,11 +20,14 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HA
 
 - Atflee iGrip 계열(iGripX, iGrip Pro 포함).
 - Atflee T8 및 같은 프로토콜의 다른 모델은 **동작할 수 있으나 미검증**입니다.
+
+## 주요 기능
+
 - 개별 사용자 프로필, 체중 기반 사용자 식별, 활성 사용자 선택, 체성분 측정 스위치를 제공합니다. 제공 지표는 모델과 실제 수신 패킷에 따라 다릅니다.
 
-## 최소 요구사항
+## 요구사항
 
-**Home Assistant 2025.8.0 이상**, HACS(또는 수동 설치), HA가 관리하는 Bluetooth 어댑터나 GATT 연결 가능한 Bluetooth proxy가 필요합니다. 체중계를 잠깐 밟아 깨우고 설정·측정 중 깨어 있게 하세요. 연결 중인 다른 앱을 종료하세요.
+**Home Assistant 2025.8.0 이상**과 HA가 관리하는 Bluetooth 어댑터나 GATT 연결 가능한 Bluetooth 프록시가 필요합니다. Home Assistant 2026.11 이상에는 마켓플레이스가 내장되어 있으며, 이전 지원 버전에서 스토어로 설치하려면 HACS가 필요합니다. 체중계를 잠깐 밟아 깨우고 설정·측정 중 깨어 있게 하세요. 연결 중인 다른 앱을 종료하세요.
 
 ## 설치
 
@@ -32,10 +35,12 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 HA
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=eigger&repository=hass-atflee&category=integration)
 <!-- hass-standards:installation:end -->
 
-1. HACS **사용자 지정 저장소**에 `https://github.com/eigger/hass-atflee`를 **통합** 유형으로 추가하고 **Atflee**를 설치합니다.
-2. HA를 재시작합니다. 수동 설치는 `custom_components/atflee/`를 HA 설정의 `custom_components/` 아래로 복사한 뒤 재시작합니다.
+1. Home Assistant 2026.11 이상에서는 **설정 → 마켓플레이스**를 열고 `https://github.com/eigger/hass-atflee`를 사용자 지정 통합 저장소로 추가합니다. 사용자 지정 저장소에는 GitHub 연결이 필요합니다. 이전 지원 버전에서는 HACS **사용자 지정 저장소**에 **통합** 유형으로 추가합니다. 위 버튼은 버전에 맞는 스토어의 저장소 화면을 엽니다.
+2. **Atflee**를 다운로드합니다. 안내가 표시되면 Home Assistant를 재시작합니다.
 3. **설정 → 기기 및 서비스 → 통합 추가 → Atflee** 또는 Bluetooth 자동 발견 항목에서 설정합니다.
 4. 첫 사용자의 이름·키·생년월일(`YYYY-MM-DD`)·성별·선택적 예상 체중을 입력하고 측정 완료까지 체중계에 머무릅니다.
+
+수동 설치는 `custom_components/atflee/`를 Home Assistant 설정의 `custom_components/` 아래로 복사한 뒤 Home Assistant를 재시작합니다.
 
 예를 들어 **사용자 추가**로 두 번째 사람을 등록한 후 측정 전에 **활성 사용자**에서 선택하세요. 선택은 측정 1회 완료 또는 10분 뒤 `auto`로 돌아갑니다. [사용자 식별·엔티티 상세](docs/usage.ko.md)를 참고하세요.
 
