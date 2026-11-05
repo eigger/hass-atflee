@@ -16,6 +16,8 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 �
 <!-- hass-standards:badges:end -->
 <!-- hass-standards:header:end -->
 
+Downloads 배지는 최신 GitHub 릴리스의 첨부 파일 다운로드를 집계합니다. 현재 활성 설치 수는 이 집계에 포함되지 않습니다.
+
 ## 지원 기기
 
 - Atflee iGrip 계열(iGripX, iGrip Pro 포함).
@@ -27,7 +29,9 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 �
 
 ## 요구사항
 
-**Home Assistant 2025.8.0 이상**과 HA가 관리하는 Bluetooth 어댑터나 GATT 연결 가능한 Bluetooth 프록시가 필요합니다. Home Assistant 2026.11 이상에는 마켓플레이스가 내장되어 있으며, 이전 지원 버전에서 스토어로 설치하려면 HACS가 필요합니다. 체중계를 잠깐 밟아 깨우고 설정·측정 중 깨어 있게 하세요. 연결 중인 다른 앱을 종료하세요.
+- **Home Assistant:** 2025.8.0 이상.
+- **Bluetooth:** Home Assistant가 관리하는 Bluetooth 어댑터 또는 활성 GATT 연결을 지원하는 Bluetooth 프록시.
+- **기기:** [지원 기기](#지원-기기)에 나열된 체중계.
 
 ## 설치
 
@@ -35,14 +39,23 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 �
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=eigger&repository=hass-atflee&category=integration)
 <!-- hass-standards:installation:end -->
 
-1. Home Assistant 2026.11 이상에서는 **설정 → 마켓플레이스**를 열고 `https://github.com/eigger/hass-atflee`를 사용자 지정 통합 저장소로 추가합니다. 사용자 지정 저장소에는 GitHub 연결이 필요합니다. 이전 지원 버전에서는 HACS **사용자 지정 저장소**에 **통합** 유형으로 추가합니다. 위 버튼은 버전에 맞는 스토어의 저장소 화면을 엽니다.
-2. **Atflee**를 다운로드합니다. 안내가 표시되면 Home Assistant를 재시작합니다.
-3. **설정 → 기기 및 서비스 → 통합 추가 → Atflee** 또는 Bluetooth 자동 발견 항목에서 설정합니다.
-4. 첫 사용자의 이름·키·생년월일(`YYYY-MM-DD`)·성별·선택적 예상 체중을 입력하고 측정 완료까지 체중계에 머무릅니다.
+1. 위 배지를 클릭해 마켓플레이스에서 저장소를 엽니다.
+2. 저장소를 직접 추가하려면 **설정 → 마켓플레이스 → 링크에서 추가**에서 <https://github.com/eigger/hass-atflee>을 입력합니다. 안내가 표시되면 GitHub 계정을 연결합니다.
+3. **설치**를 선택합니다. 재시작 안내가 표시되면 Home Assistant를 재시작합니다. 설치가 끝나면 [설정](#설정)으로 이동합니다.
 
-수동 설치는 `custom_components/atflee/`를 Home Assistant 설정의 `custom_components/` 아래로 복사한 뒤 Home Assistant를 재시작합니다.
+## 설정
 
-예를 들어 **사용자 추가**로 두 번째 사람을 등록한 후 측정 전에 **활성 사용자**에서 선택하세요. 선택은 측정 1회 완료 또는 10분 뒤 `auto`로 돌아갑니다. [사용자 식별·엔티티 상세](docs/usage.ko.md)를 참고하세요.
+체중계를 잠깐 밟아 깨우고 설정과 측정 중에는 깨어 있는 상태를 유지하세요. 연결 중인 다른 앱은 종료하세요.
+
+1. **설정 → 기기 및 서비스 → 통합 추가 → Atflee** 또는 Bluetooth 자동 발견 항목에서 설정합니다.
+2. 첫 사용자의 이름·키·생년월일(`YYYY-MM-DD`)·성별·선택적 예상 체중을 입력하고 측정 완료까지 체중계에 머무릅니다.
+
+## 빠른 시작
+
+1. **사용자 추가**로 두 번째 사용자를 등록합니다.
+2. 측정 전에 **활성 사용자**에서 해당 사용자를 선택합니다.
+
+선택은 측정 1회 완료 또는 10분 뒤 `auto`로 돌아갑니다. [사용자 식별·엔티티 상세](docs/usage.ko.md)를 참고하세요.
 
 ## 중요 제한사항
 
@@ -59,8 +72,6 @@ Atflee BLE 체중계의 데이터를 Home Assistant에서 직접 수신하는 �
 | [문제 해결](docs/troubleshooting.ko.md) / [English](docs/troubleshooting.md) | 깨우기·proxy/GATT 오류·실제 진단 경로·개인정보 |
 | [개발·테스트](docs/development.md) | Core 대응 구조·실제 HA 테스트·최소/current 환경 분리 |
 | [공통 규칙 채택](STANDARDS.md) | 기준·체크리스트·검증 한계 |
-
-Usage는 **HA Analytics 데이터 제공에 동의한 설치 집계**이며 전체 설치 수나 사람 수가 아닙니다. 미집계·조회 실패는 0 설치를 의미하지 않습니다.
 
 공개 로그에서 프로필·측정값·주소·인증정보를 제거하세요.
 
