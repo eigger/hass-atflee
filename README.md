@@ -1,7 +1,7 @@
 <!-- hass-standards:header:start -->
 # Atflee BLE for Home Assistant
 
-A HACS custom integration that reads Atflee BLE scales directly in Home Assistant, with per-user weight, body composition and connection diagnostics.
+A Home Assistant custom integration that reads Atflee BLE scales directly, with per-user weight, body composition and connection diagnostics.
 
 **English** | [한국어](README.ko.md)
 
@@ -20,11 +20,14 @@ A HACS custom integration that reads Atflee BLE scales directly in Home Assistan
 
 - Atflee iGrip family (including iGripX and iGrip Pro).
 - Atflee T8 and other protocol-compatible models **may work; untested**.
+
+## Features
+
 - Separate user profiles, weight-based attribution, an active-user select and a body-composition switch. Available metrics depend on the device and received packets.
 
 ## Requirements
 
-Home Assistant **2025.8.0 or later**, HACS (or manual installation), and an HA-managed Bluetooth adapter or a connectable Bluetooth proxy. The scale must be awake; briefly step on it and keep it awake during setup/measurement. Close other apps using it.
+Home Assistant **2025.8.0 or later** and an HA-managed Bluetooth adapter or a connectable Bluetooth proxy. Home Assistant 2026.11 and later includes Marketplace; earlier supported versions need HACS for store installation. The scale must be awake; briefly step on it and keep it awake during setup/measurement. Close other apps using it.
 
 ## Installation
 
@@ -32,10 +35,12 @@ Home Assistant **2025.8.0 or later**, HACS (or manual installation), and an HA-m
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=eigger&repository=hass-atflee&category=integration)
 <!-- hass-standards:installation:end -->
 
-1. Add `https://github.com/eigger/hass-atflee` to HACS **Custom repositories**, category **Integration**; install **Atflee**.
-2. Restart Home Assistant. Alternatively, copy `custom_components/atflee/` into your HA configuration's `custom_components/` and restart.
+1. On Home Assistant 2026.11 or later, open **Settings → Marketplace** and add `https://github.com/eigger/hass-atflee` as a custom integration repository. A GitHub connection is required for custom repositories. On earlier supported versions, add it to HACS **Custom repositories** with category **Integration**. The button above opens the repository in the appropriate store.
+2. Download **Atflee**. Restart Home Assistant if prompted.
 3. Open **Settings → Devices & services → Add integration → Atflee**, or configure its Bluetooth discovery.
 4. Enter the first user's name, height, birth date (`YYYY-MM-DD`), sex and optional expected weight. Remain on the scale until the measurement finishes.
+
+For manual installation, copy `custom_components/atflee/` into your Home Assistant configuration's `custom_components/` directory and restart Home Assistant.
 
 For example, add a second user through **Add user**, then select that user with **Active user** before weighing; the selection returns to `auto` after one completed measurement or 10 minutes. See [user attribution and all entities](docs/usage.md).
 

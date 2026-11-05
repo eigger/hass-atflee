@@ -211,3 +211,10 @@ DOC-07 README.ko.md: README must link to matching-language local troubleshooting
 - Scope: central `uses`, reusable-workflow `standards-ref`, `.hass-standards.json`, and the current STANDARDS header only. The old scoped ZIP pin is retained as historical evidence in STANDARDS; runtime code, tests, dependencies, support minimum, manifest and integration version are unchanged.
 - Verification: Python 3.14 central `check_integration.py` baseline and post-change check; immutable release remote attestation; focused reference/ZIP checks; actionlint and diff check. PR CI and merge remain pending.
 - Review: generated reference change self-review under GOV-05; no device or HA runtime test is claimed for this refs-only PR.
+
+## 2026-11-05 README 형식 부분 변경
+
+- 대상 시작 커밋: `f9e46ae71ced3d8a79081fd465befa2de623794d` (`master`). 중앙 작성 기준 후보: [PR #49](https://github.com/eigger/hass-repo-standards/pull/49), 미출시. 기존 release pin과 지원 최소 HA 2025.8.0은 유지합니다.
+- 범위: 영어·한국어 소개와 마켓플레이스/HACS 설치 안내, 기기·기능 절 구분. 기존 사용자 설정, 수동 설치, 제한·업그레이드·개인정보 고지와 기기 동작은 보존합니다.
+- 독립 리뷰: Codex `central_review`가 기존 기능·제약·양언어·링크와 실제 config flow·Bluetooth 발견, HACS Default 목록을 대조했고 필수 수정 지적은 없었습니다. 기능 절 분리와 제목 앞 빈 줄 제안을 반영했습니다.
+- 로컬 검증: Windows Python 3.14의 LF 정규화 임시 snapshot에서 중앙 후보 `python scripts/check_integration.py <snapshot>` 종료 0. 원격 CI·Home Assistant UI·실물 기기는 미실행이며 기존 검증 결과를 이번 변경의 실행 결과로 재사용하지 않습니다. README 부분 변경이며 전체 재채택이 아닙니다.
