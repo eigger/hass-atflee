@@ -10,7 +10,11 @@ import logging
 from time import monotonic
 from typing import Any
 
-from blesession import SessionReports, fallback_report, stages
+from blesession import (
+    SessionDropped,
+    SessionReports,
+    fallback_report,
+)
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_ADDRESS
@@ -674,13 +678,14 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
             arm_started: float | None = None
             info_task: asyncio.Task | None = None
             measure_started: float | None = None
+            measurement_received = False
             self.session_report_pending = True
             try:
-                with trace.timed(stages.CONNECT):
-                    await self.client.connect_with_profiles(
-                        ble_device=ble_device,
-                        profiles=GATT_PROFILES,
-                    )
+                await self.client.connect_with_profiles(
+                    ble_device=ble_device,
+                    profiles=GATT_PROFILES,
+                    trace=trace,
+                )
                 connected = True
                 arm_started = monotonic()
                 self._failure_recorded_this_wake = False
@@ -742,9 +747,15 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                     remaining = idle_timeout - (monotonic() - last_event)
                     if remaining <= 0:
                         break
-                    measurement = await self.client.wait_for_measurement(
-                        timeout_seconds=remaining
-                    )
+                    try:
+                        measurement = await self.client.wait_for_measurement(
+                            timeout_seconds=remaining
+                        )
+                    except TimeoutError:
+                        # Only expiry while waiting for a packet is normal idle.
+                        # Backend timeouts from writes/ACKs remain real failures.
+                        _LOGGER.debug("Atflee session ended on idle timeout")
+                        break
                     last_event = monotonic()
                     packets += 1
                     _LOGGER.debug(
@@ -761,12 +772,18 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         measurement.packet_command in ACKED_COMMANDS
                         and measurement.packet_sequence is not None
                     ):
-                        acked = await self.client.send_frames(
-                            build_reply_frames(
-                                pkg_index=self.client.next_pkg_index(),
-                                reply_index=measurement.packet_sequence,
+                        try:
+                            acked = await self.client.send_frames(
+                                build_reply_frames(
+                                    pkg_index=self.client.next_pkg_index(),
+                                    reply_index=measurement.packet_sequence,
+                                )
                             )
-                        )
+                        except SessionDropped:
+                            # Final messages may already be queued when the scale
+                            # powers down. Drain them before classifying the drop;
+                            # the next empty packet wait raises SessionDropped.
+                            acked = False
                         _LOGGER.debug(
                             "Atflee ack %s: cmd=0x%02X reply_index=%s",
                             "sent" if acked else "failed",
@@ -840,6 +857,8 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                         )
                         continue
 
+                    if measurement.weight_kg is not None:
+                        measurement_received = True
                     measurement = self._merge_with_previous_measurement(
                         measurement, user_id
                     )
@@ -872,21 +891,21 @@ class AtfleeDataUpdateCoordinator(DataUpdateCoordinator[AtfleeState]):
                             measuring=not measurement.is_body_composition_complete,
                         )
                     )
-            except TimeoutError as err:
-                if connected and measure_started is not None:
-                    # Normal end: measured then went idle. Keep this wake
-                    # "handled" so we don't immediately re-measure while still
-                    # advertising.
-                    _LOGGER.debug("Atflee session ended on idle timeout")
+            except SessionDropped as err:
+                if measurement_received:
+                    # The scale normally powers its radio down after sending a result.
+                    _LOGGER.debug("Atflee session ended after measurement")
                 else:
-                    # Timed out before the link was up, or before measuring
-                    # started: a failure, not an idle end. Allow a retry once
-                    # the cooldown elapses.
                     outcome = err
                     self._handled_current_presence = False
-                    if connected:
-                        trace.fail(ARM)
-                    _LOGGER.debug("Atflee session timed out")
+                    trace.fail(ARM if measure_started is None else MEASURE)
+                    _LOGGER.debug("Atflee link dropped before a measurement")
+            except TimeoutError as err:
+                outcome = err
+                self._handled_current_presence = False
+                if connected:
+                    trace.fail(ARM if measure_started is None else MEASURE)
+                _LOGGER.debug("Atflee session timed out")
             except asyncio.CancelledError:
                 cancelled = True
                 raise

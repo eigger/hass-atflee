@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from blesession import SessionReports, fallback_report, stages
+from blesession import SessionDropped, SessionReports, fallback_report, stages
 
 from custom_components.atflee import session_report
 
@@ -75,3 +75,12 @@ def test_build_report_success() -> None:
     report = _report(trace, None)
     assert report["success"] is True
     assert "error" not in report
+
+
+def test_link_drop_uses_common_transport_cause() -> None:
+    for detail in (session_report.ARM, session_report.MEASURE):
+        trace = session_report.SessionTrace()
+        trace.fail(detail)
+        report = _report(trace, SessionDropped("scale disconnected"))
+        assert report["likely_cause_key"] == "link_lost"
+        assert "packet could not be processed" not in report["likely_cause"]
