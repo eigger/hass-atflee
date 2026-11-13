@@ -4,10 +4,20 @@ from __future__ import annotations
 
 import asyncio
 from asyncio import Queue, TimeoutError, wait_for
+from contextlib import AsyncExitStack, suppress
 import logging
 
+from bleak import BleakClient
 from bleak.backends.device import BLEDevice
-from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
+from bleak.exc import BleakError
+from blesession import (
+    SessionDropped,
+    SessionTrace,
+    WriteTimeout,
+    ble_session,
+    dropped_event,
+    guarded_write,
+)
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_last_service_info,
@@ -42,6 +52,7 @@ _LOGGER = logging.getLogger(__name__)
 # indefinitely and pin the session task in a non-done state — blocking every
 # future advertisement-driven reconnect attempt.
 DISCONNECT_TIMEOUT_SECONDS = 3.0
+WRITE_TIMEOUT_SECONDS = 5.0
 
 
 def _is_notify_like(properties: list[str] | tuple[str, ...] | set[str]) -> bool:
@@ -54,7 +65,8 @@ class AtfleeBleClient:
     def __init__(self, hass: HomeAssistant, address: str) -> None:
         self._hass = hass
         self._address = address
-        self._client: BleakClientWithServiceCache | None = None
+        self._client: BleakClient | None = None
+        self._session_stack: AsyncExitStack | None = None
         self._notify_char_uuid: str | None = None
         self._write_char_uuid: str | None = None
         self._extra_notify_char_uuids: list[str] = []
@@ -66,7 +78,7 @@ class AtfleeBleClient:
         self._out_pkg_index = 0
         self.device_info: AtfleeDeviceInfo | None = None
 
-    async def _debug_dump_gatt_map(self, client: BleakClientWithServiceCache) -> None:
+    async def _debug_dump_gatt_map(self, client: BleakClient) -> None:
         """Dump full service/characteristic map for diagnostic purposes."""
         if not client.services:
             _LOGGER.debug("Atflee GATT map unavailable: no services cache")
@@ -82,7 +94,7 @@ class AtfleeBleClient:
                 )
 
     async def _debug_probe_readable_chars(
-        self, client: BleakClientWithServiceCache, target_service_uuid: str
+        self, client: BleakClient, target_service_uuid: str
     ) -> None:
         """Try one-shot read on readable chars for diagnostics (battery hints)."""
         if not client.services:
@@ -112,7 +124,7 @@ class AtfleeBleClient:
                     )
 
     async def _debug_probe_known_read_uuids(
-        self, client: BleakClientWithServiceCache, char_uuids: tuple[str, ...]
+        self, client: BleakClient, char_uuids: tuple[str, ...]
     ) -> None:
         """Probe known read UUIDs even if they are on a different service."""
         for char_uuid in char_uuids:
@@ -180,6 +192,8 @@ class AtfleeBleClient:
         self,
         ble_device: BLEDevice,
         profiles: tuple[tuple[str, str, str | None], ...],
+        *,
+        trace: SessionTrace | None = None,
     ) -> tuple[str, str, str | None]:
         """Try fixed GATT profiles and keep the successful session open."""
 
@@ -190,9 +204,17 @@ class AtfleeBleClient:
         self._out_pkg_index = 0
         self.device_info = None
 
+        trace = trace if trace is not None else SessionTrace()
         last_error: Exception | None = None
-        for service_uuid, notify_char_uuid, write_char_uuid in profiles:
-            client: BleakClientWithServiceCache | None = None
+        for profile_index, (
+            service_uuid,
+            notify_char_uuid,
+            write_char_uuid,
+        ) in enumerate(profiles):
+            stack = AsyncExitStack()
+            facts_before_profile = dict(trace.facts)
+            link_before_profile = trace.link
+            failed_stage_before_profile = trace.failed_stage
             try:
                 _LOGGER.debug(
                     "Trying GATT profile service=%s notify=%s write=%s",
@@ -200,12 +222,14 @@ class AtfleeBleClient:
                     notify_char_uuid,
                     write_char_uuid,
                 )
-                client = await establish_connection(
-                    client_class=BleakClientWithServiceCache,
-                    device=ble_device,
-                    name="Atflee scale",
-                    disconnected_callback=None,
-                    use_services_cache=True,
+                client = await stack.enter_async_context(
+                    ble_session(
+                        ble_device,
+                        name="Atflee scale",
+                        trace=trace,
+                        disconnect_timeout_s=DISCONNECT_TIMEOUT_SECONDS,
+                        use_services_cache=True,
+                    )
                 )
                 _LOGGER.debug("Atflee connected")
                 await self._debug_dump_gatt_map(client)
@@ -278,19 +302,25 @@ class AtfleeBleClient:
                             type(err).__name__,
                         )
                 self._client = client
+                self._session_stack = stack
                 self._notify_char_uuid = resolved_notify_uuid
                 self._write_char_uuid = resolved_write_uuid
                 self._last_notify_packet = None
                 return (service_uuid, resolved_notify_uuid, resolved_write_uuid)
-            except asyncio.CancelledError:
-                if client is not None and client.is_connected:
-                    await self._safe_call(client.disconnect(), "cancelled profile")
+            except asyncio.CancelledError as err:
+                await stack.__aexit__(type(err), err, err.__traceback__)
                 raise
             except Exception as err:  # noqa: BLE001
                 last_error = err
                 _LOGGER.debug("GATT profile failed: %s", type(err).__name__)
-                if client is not None and client.is_connected:
-                    await self._safe_call(client.disconnect(), "failed profile")
+                await stack.__aexit__(type(err), err, err.__traceback__)
+                if profile_index + 1 < len(profiles):
+                    # Keep aggregate timing and caller facts, but do not attribute
+                    # an abandoned link's MTU/drop/cleanup facts to the next one.
+                    trace.facts.clear()
+                    trace.facts.update(facts_before_profile)
+                    trace.link = link_before_profile
+                    trace.failed_stage = failed_stage_before_profile
                 continue
 
         if last_error is None:
@@ -304,9 +334,7 @@ class AtfleeBleClient:
             timeout_seconds,
             self._packet_queue.qsize(),
         )
-        packet, message = await wait_for(
-            self._packet_queue.get(), timeout=timeout_seconds
-        )
+        packet, message = await wait_for(self._next_packet(), timeout=timeout_seconds)
         _LOGGER.debug("Atflee packet dequeued")
         if message is not None:
             if message.command == CMD_DEVICE_INFO:
@@ -319,6 +347,44 @@ class AtfleeBleClient:
         return parse_measurement_packet(
             packet, self.device_info.kg_division if self.device_info else 0
         )
+
+    async def _next_packet(self) -> tuple[bytes, AtfleeMessage | None]:
+        """Drain delivered packets, then wake immediately when the link drops."""
+        if not self._packet_queue.empty():
+            return self._packet_queue.get_nowait()
+        client = self._client
+        dropped = dropped_event(client) if client is not None else None
+        if client is None or not client.is_connected or (dropped and dropped.is_set()):
+            raise SessionDropped("The scale disconnected while waiting for measurement")
+        if dropped is None:
+            return await self._packet_queue.get()
+        packet = asyncio.create_task(self._packet_queue.get())
+        gone = asyncio.create_task(dropped.wait())
+        delivered = False
+        try:
+            await asyncio.wait({packet, gone}, return_when=asyncio.FIRST_COMPLETED)
+            if packet.done():
+                delivered = True
+                return packet.result()
+            raise SessionDropped("The scale disconnected while waiting for measurement")
+        finally:
+            gone.cancel()
+            if not packet.done():
+                packet.cancel()
+            elif (
+                not delivered and not packet.cancelled() and packet.exception() is None
+            ):
+                # Cancellation raced with delivery: preserve the packet at the front.
+                queued = []
+                while not self._packet_queue.empty():
+                    queued.append(self._packet_queue.get_nowait())
+                self._packet_queue.put_nowait(packet.result())
+                for item in queued:
+                    if not self._packet_queue.full():
+                        self._packet_queue.put_nowait(item)
+            for task in (packet, gone):
+                with suppress(asyncio.CancelledError):
+                    await task
 
     async def read_hardware_info(self) -> tuple[AtfleeHardwareInfo | None, bool]:
         """Read the Device Information service strings of the open session.
@@ -369,71 +435,84 @@ class AtfleeBleClient:
         return True
 
     async def send_user_info(self, packet: bytes) -> bool:
-        """Send a constructed user info packet to trigger active measurement."""
-        if not self._client or not self._client.is_connected:
-            _LOGGER.debug("Atflee write failed: client not connected")
-            return False
+        """Write with a bound; retry an unsupported response mode only once."""
+        client = self._client
+        if client is None or not client.is_connected:
+            raise SessionDropped("The scale disconnected before writing")
         if not self._write_char_uuid:
             _LOGGER.debug("Atflee write failed: no write characteristic discovered")
             return False
 
         try:
-            _LOGGER.debug(
-                "Atflee write: bytes=%d char=%s", len(packet), self._write_char_uuid
-            )
-            await self._client.write_gatt_char(
-                self._write_char_uuid, packet, response=True
-            )
-            return True
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug(
-                "Atflee write failed: char=%s err=%s",
+            await guarded_write(
+                client,
                 self._write_char_uuid,
-                type(err).__name__,
+                packet,
+                response=True,
+                timeout=WRITE_TIMEOUT_SECONDS,
+                step="scale_write",
             )
-            # Some devices don't support write with response, retry without response
-            try:
-                _LOGGER.debug("Atflee retrying without response...")
-                await self._client.write_gatt_char(
-                    self._write_char_uuid, packet, response=False
+        except (SessionDropped, WriteTimeout):
+            raise
+        except BleakError as err:
+            # A transport failure is not evidence that another write mode helps.
+            # Only retry the mode mismatch devices/backends explicitly report.
+            message = str(err).lower()
+            if not any(
+                marker in message
+                for marker in (
+                    "not supported",
+                    "notsupported",
+                    "unsupported",
+                    "not permitted",
+                    "notpermitted",
+                    "not allowed",
                 )
-                return True
-            except Exception as err2:  # noqa: BLE001
-                _LOGGER.debug(
-                    "Atflee write without response failed: err=%s", type(err2).__name__
-                )
-                return False
+            ):
+                raise
+            await guarded_write(
+                client,
+                self._write_char_uuid,
+                packet,
+                response=False,
+                timeout=WRITE_TIMEOUT_SECONDS,
+                step="scale_write",
+            )
+        return True
 
     async def disconnect(self) -> None:
-        """Stop notify and close current BLE session.
+        """Release notifications, then close the held blesession context.
 
-        Every BLE call here is bounded by ``DISCONNECT_TIMEOUT_SECONDS``. The
-        scale can drop the link without acking and leave Bleak waiting on a
-        response that never arrives; without the timeout the session task
-        would stay non-done forever and block every future reconnect.
+        The successful context remains open from profile selection through the
+        last measurement/ACK, so final MTU and spontaneous-drop facts describe
+        the actual session. The aggregate unsubscribe budget plus close budget
+        fit inside the coordinator's outer cleanup limit.
         """
-        if self._client is None:
-            return
+        stack, self._session_stack = self._session_stack, None
+        client, self._client = self._client, None
         try:
-            if self._notify_char_uuid and self._client.is_connected:
-                await self._safe_call(
-                    self._client.stop_notify(self._notify_char_uuid),
-                    f"stop_notify({self._notify_char_uuid})",
-                )
-            if self._client.is_connected and self._extra_notify_char_uuids:
-                for char_uuid in self._extra_notify_char_uuids:
-                    await self._safe_call(
-                        self._client.stop_notify(char_uuid),
-                        f"stop_notify_extra({char_uuid})",
-                    )
-            if self._client.is_connected:
-                await self._safe_call(self._client.disconnect(), "disconnect")
+            if client is not None and client.is_connected:
+                try:
+                    async with asyncio.timeout(DISCONNECT_TIMEOUT_SECONDS):
+                        for char_uuid in (
+                            self._notify_char_uuid,
+                            *self._extra_notify_char_uuids,
+                        ):
+                            if char_uuid:
+                                await self._safe_call(
+                                    client.stop_notify(char_uuid), "stop_notify"
+                                )
+                except TimeoutError:
+                    _LOGGER.debug("Atflee unsubscribe exceeded cleanup budget")
         finally:
-            self._client = None
-            self._notify_char_uuid = None
-            self._write_char_uuid = None
-            self._extra_notify_char_uuids = []
-            self._last_notify_packet = None
+            try:
+                if stack is not None:
+                    await stack.aclose()
+            finally:
+                self._notify_char_uuid = None
+                self._write_char_uuid = None
+                self._extra_notify_char_uuids = []
+                self._last_notify_packet = None
 
     @staticmethod
     async def _safe_call(coro, label: str) -> None:

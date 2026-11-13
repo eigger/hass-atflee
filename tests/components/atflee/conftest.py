@@ -36,17 +36,34 @@ class ScaleTransport:
         self.writes = []
         self.callbacks = {}
         self.fail_connect = False
+        self.mtu_size = 247
+        self._disconnected_callback = None
 
-    async def connect(self, **kwargs):
+    async def connect(
+        self,
+        client_class=None,
+        device=None,
+        name=None,
+        *,
+        disconnected_callback=None,
+        **kwargs,
+    ):
         if self.fail_connect:
             raise TimeoutError("scale unavailable")
         self.connections += 1
         self.is_connected = True
+        self._disconnected_callback = disconnected_callback
         return self
 
     async def disconnect(self):
         self.disconnects += 1
+        self.drop()
+        self.callbacks.clear()
+
+    def drop(self):
         self.is_connected = False
+        if self._disconnected_callback is not None:
+            self._disconnected_callback(self)
 
     async def start_notify(self, uuid, callback):
         self.callbacks[uuid] = callback
@@ -80,7 +97,7 @@ def transport(monkeypatch):
     device = ScaleTransport()
     device.services = Services()
     monkeypatch.setattr(
-        "custom_components.atflee.atflee_ble.connection.establish_connection",
+        "blesession.session.establish_connection",
         device.connect,
     )
     return device

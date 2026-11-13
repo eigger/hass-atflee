@@ -13,7 +13,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from blesession import Failure, WriteTimeout, build_report, cause_key, placement, stages
+from blesession import (
+    Failure,
+    SessionDropped,
+    WriteTimeout,
+    build_report,
+    cause_key,
+    placement,
+    stages,
+)
 from blesession import SessionTrace as _SessionTrace
 from blesession.hass import radio_facts
 
@@ -85,7 +93,7 @@ def build_session_report(
 
     def cause(failure: Failure) -> str | None:
         """The scale's sentence; ``None`` hands the failure back to the library."""
-        if isinstance(failure.exc, WriteTimeout):
+        if isinstance(failure.exc, (SessionDropped, WriteTimeout)):
             return None
         text = scale_cause(failure.stage, failure.detail, failure.error, failure.facts)
         if text is not None:

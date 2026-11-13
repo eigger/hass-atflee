@@ -4,6 +4,8 @@ import asyncio
 
 import pytest
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakError
+from blesession import SessionDropped, SessionTrace, WriteTimeout
 
 from custom_components.atflee.atflee_ble.connection import AtfleeBleClient
 from custom_components.atflee.const import GATT_PROFILES
@@ -25,6 +27,197 @@ async def test_notify_failure_releases_open_link(hass, transport, failure, monke
     assert not transport.is_connected
     assert transport.disconnects == 1
     assert not client.is_connected
+
+
+async def test_full_session_collects_route_mtu_and_own_close_is_not_a_drop(
+    hass, transport
+):
+    trace = SessionTrace()
+    transport._connected_scanner = "test-proxy"
+    client = AtfleeBleClient(hass, ADDRESS)
+    await client.connect_with_profiles(
+        BLEDevice(ADDRESS, "Test", {"source": "advertised-proxy"}),
+        GATT_PROFILES[:1],
+        trace=trace,
+    )
+    assert trace.stage == "session"
+    assert trace.link.via == "test-proxy"
+    assert trace.link.source == "advertised-proxy"
+    assert "mtu" not in trace.facts
+    await client.disconnect()
+    assert trace.stage is None
+    assert trace.facts["mtu"] == 247
+    assert "link_dropped" not in trace.facts
+    assert {"connect", "session", "disconnect"} <= trace.timings.keys()
+
+
+async def test_profile_recovery_does_not_leave_a_failed_stage(
+    hass, transport, monkeypatch
+):
+    trace = SessionTrace()
+    original = transport.start_notify
+    attempts = 0
+
+    async def first_profile_fails(*args):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise BleakError("profile unavailable")
+        await original(*args)
+
+    monkeypatch.setattr(transport, "start_notify", first_profile_fails)
+    client = AtfleeBleClient(hass, ADDRESS)
+    selected = await client.connect_with_profiles(
+        BLEDevice(ADDRESS, "Test", {}),
+        GATT_PROFILES[:2],
+        trace=trace,
+    )
+    assert selected == GATT_PROFILES[1]
+    assert transport.connections == 2 and transport.disconnects == 1
+    assert trace.failed_primary is None
+    await client.disconnect()
+    assert trace.stage is None and trace.failed_primary is None
+
+
+async def test_profile_recovery_discards_abandoned_link_facts(
+    hass, transport, monkeypatch
+):
+    trace = SessionTrace()
+    trace.note(caller_fact=42)
+    transport.mtu_size = 99
+    transport._connected_scanner = "failed-proxy"
+    original_notify = transport.start_notify
+    original_disconnect = transport.disconnect
+    notify_calls = 0
+    disconnect_calls = 0
+
+    async def notify(*args):
+        nonlocal notify_calls
+        notify_calls += 1
+        if notify_calls == 1:
+            transport.drop()
+            raise BleakError("first profile disconnected")
+        await original_notify(*args)
+
+    async def disconnect():
+        nonlocal disconnect_calls
+        disconnect_calls += 1
+        if disconnect_calls == 1:
+            transport.mtu_size = 247
+            transport._connected_scanner = "selected-proxy"
+            raise BleakError("abandoned link cleanup failed")
+        await original_disconnect()
+
+    monkeypatch.setattr(transport, "start_notify", notify)
+    monkeypatch.setattr(transport, "disconnect", disconnect)
+    client = AtfleeBleClient(hass, ADDRESS)
+    await client.connect_with_profiles(
+        BLEDevice(ADDRESS, "Test", {}), GATT_PROFILES[:2], trace=trace
+    )
+    assert trace.link.via == "selected-proxy"
+    assert trace.facts == {"caller_fact": 42}
+    assert trace.failed_primary is None
+    await client.disconnect()
+    assert trace.facts == {"caller_fact": 42, "mtu": 247}
+    assert {"connect", "session", "disconnect"} <= trace.timings.keys()
+
+
+async def test_link_drop_wakes_packet_wait_and_is_recorded(hass, transport):
+    trace = SessionTrace()
+    client = AtfleeBleClient(hass, ADDRESS)
+    await client.connect_with_profiles(
+        BLEDevice(ADDRESS, "Test", {}),
+        GATT_PROFILES[:1],
+        trace=trace,
+    )
+    waiting = asyncio.create_task(client.wait_for_measurement(30))
+    await asyncio.sleep(0)
+    transport.drop()
+    with pytest.raises(SessionDropped):
+        await asyncio.wait_for(waiting, 1)
+    await client.disconnect()
+    assert transport.disconnects == 1  # release the proxy slot even on a dead link
+    assert trace.facts["link_dropped"] is True
+    assert trace.facts["dropped_after_s"] >= 0
+
+
+async def test_final_queued_packet_is_delivered_before_drop(hass, transport):
+    client = AtfleeBleClient(hass, ADDRESS)
+    await client.connect_with_profiles(
+        BLEDevice(ADDRESS, "Test", {}), GATT_PROFILES[:1]
+    )
+    transport.push(bytes.fromhex("010700a201190117740000000000000000000008"))
+    transport.drop()
+    measurement = await client.wait_for_measurement(30)
+    assert measurement.weight_kg is not None
+    with pytest.raises(SessionDropped):
+        await client.wait_for_measurement(30)
+    await client.disconnect()
+
+
+async def test_write_timeout_does_not_retry_another_mode(hass, transport, monkeypatch):
+    calls = []
+
+    async def stuck(uuid, data, response=False):
+        calls.append(response)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(transport, "write_gatt_char", stuck)
+    monkeypatch.setattr(
+        "custom_components.atflee.atflee_ble.connection.WRITE_TIMEOUT_SECONDS", 0.01
+    )
+    client = AtfleeBleClient(hass, ADDRESS)
+    await client.connect_with_profiles(
+        BLEDevice(ADDRESS, "Test", {}), GATT_PROFILES[:1]
+    )
+    with pytest.raises(WriteTimeout):
+        await asyncio.wait_for(client.send_frames([b"frame"]), 1)
+    assert calls == [True]
+    await client.disconnect()
+
+
+@pytest.mark.parametrize("unsupported", [True, False])
+async def test_response_mode_fallback_does_not_retry_transport_faults(
+    hass, transport, monkeypatch, unsupported
+):
+    calls = []
+
+    async def write(uuid, data, response=False):
+        calls.append(response)
+        if response:
+            raise BleakError(
+                "Write not permitted" if unsupported else "transport failed"
+            )
+
+    monkeypatch.setattr(transport, "write_gatt_char", write)
+    client = AtfleeBleClient(hass, ADDRESS)
+    await client.connect_with_profiles(
+        BLEDevice(ADDRESS, "Test", {}), GATT_PROFILES[:1]
+    )
+    if unsupported:
+        assert await client.send_frames([b"frame"])
+        assert calls == [True, False]
+    else:
+        with pytest.raises(BleakError, match="transport failed"):
+            await client.send_frames([b"frame"])
+        assert calls == [True]
+    await client.disconnect()
+
+
+async def test_cancelled_packet_wait_does_not_steal_the_next_packet(hass, transport):
+    client = AtfleeBleClient(hass, ADDRESS)
+    await client.connect_with_profiles(
+        BLEDevice(ADDRESS, "Test", {}), GATT_PROFILES[:1]
+    )
+    waiting = asyncio.create_task(client.wait_for_measurement(30))
+    await asyncio.sleep(0)
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    transport.push(bytes.fromhex("010700a201190117740000000000000000000008"))
+    measurement = await asyncio.wait_for(client.wait_for_measurement(30), 1)
+    assert measurement.weight_kg is not None
+    await client.disconnect()
 
 
 async def test_failed_profile_disconnect_is_bounded(hass, transport, monkeypatch):
