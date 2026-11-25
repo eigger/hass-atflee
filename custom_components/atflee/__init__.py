@@ -22,7 +22,7 @@ from .const import (
     CONF_MATCH_TOLERANCE_KG,
     LAST_WEIGHTS_STORE_VERSION,
 )
-from .entity import scale_device_info
+from .entity import scale_device_fields
 from .user_profile import reload_needed
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: AtfleeConfigEntry) -> bo
         # User devices point at the scale device by its registry id, so make sure
         # it exists before any platform adds entities.
         scale_device = dr.async_get(hass).async_get_or_create(
-            config_entry_id=entry.entry_id, **scale_device_info(entry)
+            config_entry_id=entry.entry_id, **scale_device_fields(entry)
         )
         coordinator.scale_device_id = scale_device.id
 

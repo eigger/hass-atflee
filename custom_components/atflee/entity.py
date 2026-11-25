@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH
@@ -12,25 +14,30 @@ from .registry_compat import via_device_fields
 from .user_profile import user_device_identifier
 
 
-def scale_device_info(entry: ConfigEntry) -> DeviceInfo:
-    """Device of the scale itself (battery, connection, diagnostics).
+def scale_device_fields(entry: ConfigEntry) -> dict[str, Any]:
+    """Keyword arguments describing the scale device.
 
     Model, serial number and versions come from the scale's Device Information
     service once it has been read (kept by the coordinator across restarts).
     """
     address = entry.data[CONF_ADDRESS]
-    info = DeviceInfo(
-        connections={(CONNECTION_BLUETOOTH, address)},
-        identifiers={(DOMAIN, address)},
-        name=entry.title,
-        manufacturer="Atflee",
-        model="BLE Scale",
-    )
+    fields: dict[str, Any] = {
+        "connections": {(CONNECTION_BLUETOOTH, address)},
+        "identifiers": {(DOMAIN, address)},
+        "name": entry.title,
+        "manufacturer": "Atflee",
+        "model": "BLE Scale",
+    }
     coordinator = getattr(entry, "runtime_data", None)
     hardware = getattr(coordinator, "hardware_info", None)
     if hardware is not None:
-        info.update(hardware.registry_fields())
-    return info
+        fields.update(hardware.registry_fields())
+    return fields
+
+
+def scale_device_info(entry: ConfigEntry) -> DeviceInfo:
+    """Device of the scale itself (battery, connection, diagnostics)."""
+    return DeviceInfo(**scale_device_fields(entry))
 
 
 def user_device_info(entry: ConfigEntry, subentry: ConfigSubentry) -> DeviceInfo:

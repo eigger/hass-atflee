@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TypedDict
 
 import custom_components.atflee.registry_compat as rc
@@ -24,15 +25,26 @@ class NewDeviceInfo(TypedDict, total=False):
     via_device_id: str
 
 
-class DataclassDeviceInfo:
-    """Later cores: a dataclass that still exposes TypedDict key sets."""
+@dataclass
+class OldDataclassDeviceInfo:
+    """A dataclass DeviceInfo without via_device_id."""
 
-    __required_keys__ = frozenset()
-    __optional_keys__ = frozenset({"identifiers", "via_device_id"})
+    identifiers: set[tuple[str, str]] | None = None
+    via_device: tuple[str, str] | None = None
+
+
+@dataclass
+class DataclassDeviceInfo:
+    """Later cores: a dataclass, which has no TypedDict key sets."""
+
+    identifiers: set[tuple[str, str]] | None = None
+    via_device: tuple[str, str] | None = None
+    via_device_id: str | None = None
 
 
 def test_old_core_uses_via_device() -> None:
     assert not rc.supports_via_device_id(OldDeviceInfo)
+    assert not rc.supports_via_device_id(OldDataclassDeviceInfo)
     assert rc.via_device_fields(OldDeviceInfo, SCALE, "dev1") == {"via_device": SCALE}
 
 
@@ -43,7 +55,14 @@ def test_new_core_uses_via_device_id() -> None:
 
 
 def test_new_core_without_registered_parent_falls_back() -> None:
-    assert rc.via_device_fields(NewDeviceInfo, SCALE, None) == {"via_device": SCALE}
+    for cls in (NewDeviceInfo, DataclassDeviceInfo):
+        assert rc.via_device_fields(cls, SCALE, None) == {"via_device": SCALE}
+
+
+def test_old_dataclass_uses_via_device() -> None:
+    assert rc.via_device_fields(OldDataclassDeviceInfo, SCALE, "dev1") == {
+        "via_device": SCALE
+    }
 
 
 class OldRegistry:
