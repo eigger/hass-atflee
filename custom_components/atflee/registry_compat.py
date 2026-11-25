@@ -14,7 +14,9 @@ from typing import Any
 
 def supports_via_device_id(device_info_cls: type) -> bool:
     """Return whether this core's DeviceInfo accepts a via device registry id."""
-    return "via_device_id" in getattr(device_info_cls, "__optional_keys__", ())
+    # Annotations exist on both the TypedDict (older cores) and the dataclass
+    # (later cores); the deprecated TypedDict key sets are not read.
+    return "via_device_id" in getattr(device_info_cls, "__annotations__", {})
 
 
 def via_device_fields(
